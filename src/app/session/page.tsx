@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { CardReview } from "@/components/CardReview";
 import { SentenceInput } from "@/components/SentenceInput";
 import { RatingButtons } from "@/components/RatingButtons";
+import { AIFeedback } from "@/components/AIFeedback";
 import { Timer } from "@/components/Timer";
 import { WorstCardsChallenge } from "@/components/WorstCardsChallenge";
 import { MonologuePrompt } from "@/components/MonologuePrompt";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import {
   getDueCardsAction,
   createSessionAction,
@@ -20,6 +22,7 @@ import { findWorstThreeCards } from "@/lib/session";
 import type { CardWithWord, ReviewResult, ScoredCard, Rating } from "@/types";
 
 type Phase = "loading" | "empty" | "reviewing" | "reinforcement" | "monologue";
+type CardPhase = "front" | "revealed" | "sentence" | "feedback";
 
 export default function SessionPage() {
   const router = useRouter();
@@ -32,6 +35,11 @@ export default function SessionPage() {
   const [sentence, setSentence] = useState("");
   const [timerKey, setTimerKey] = useState(0);
   const cardStartTimeRef = useRef<number>(Date.now());
+
+  const [cardPhase, setCardPhase] = useState<CardPhase>("front");
+  const [selectedRating, setSelectedRating] = useState<Rating | null>(null);
+  const [feedbackText, setFeedbackText] = useState<string | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -90,48 +98,113 @@ export default function SessionPage() {
   const currentCard = dueCards[currentIndex] as CardWithWord | undefined;
   const progress = dueCards.length > 0 ? (currentIndex / dueCards.length) * 100 : 0;
 
-  const handleRate = useCallback(
-    async (rating: Rating) => {
-      if (!currentCard || sessionId === null) return;
+  const handleReveal = useCallback(() => {
+    setCardPhase("revealed");
+  }, []);
 
-      const responseTimeMs = Date.now() - cardStartTimeRef.current;
-      const result: ReviewResult = {
-        cardId: currentCard.card.id,
-        word: currentCard.word.word,
-        rating,
-        responseTimeMs,
-        sentence,
-      };
-
-      // Fire-and-forget: don't block UI on network call
-      submitCardReviewAction(
-        sessionId,
-        currentCard.card.id,
-        rating,
-        responseTimeMs,
-        sentence
-      );
-
-      const newResults = [...results, result];
-      setResults(newResults);
+  const advanceToNext = useCallback(
+    async (newResults: ReviewResult[]) => {
       setSentence("");
+      setSelectedRating(null);
+      setFeedbackText(null);
 
       if (currentIndex + 1 >= dueCards.length) {
         const worst = findWorstThreeCards(newResults);
         setWorstCards(worst);
-        await completeSessionAction(
-          sessionId,
-          worst.map((w) => w.cardId)
-        );
+        if (sessionId !== null) {
+          await completeSessionAction(
+            sessionId,
+            worst.map((w) => w.cardId)
+          );
+        }
         setPhase("reinforcement");
       } else {
         setCurrentIndex((i) => i + 1);
         cardStartTimeRef.current = Date.now();
         setTimerKey((k) => k + 1);
+        setCardPhase("front");
       }
     },
-    [currentCard, sessionId, sentence, results, currentIndex, dueCards.length]
+    [currentIndex, dueCards.length, sessionId]
   );
+
+  const handleSelectRating = useCallback(
+    (rating: Rating) => {
+      if (!currentCard || sessionId === null) return;
+
+      // "Again" means the word went badly — skip writing a sentence for it.
+      if (rating === 1) {
+        const responseTimeMs = Date.now() - cardStartTimeRef.current;
+        const result: ReviewResult = {
+          cardId: currentCard.card.id,
+          word: currentCard.word.word,
+          rating,
+          responseTimeMs,
+          sentence: "",
+        };
+
+        submitCardReviewAction(sessionId, currentCard.card.id, rating, responseTimeMs, "");
+
+        const newResults = [...results, result];
+        setResults(newResults);
+        advanceToNext(newResults);
+        return;
+      }
+
+      setSelectedRating(rating);
+      setCardPhase("sentence");
+    },
+    [currentCard, sessionId, results, advanceToNext]
+  );
+
+  const handleSentenceSubmit = useCallback(async () => {
+    if (!currentCard || sessionId === null || selectedRating === null) return;
+
+    const responseTimeMs = Date.now() - cardStartTimeRef.current;
+    const result: ReviewResult = {
+      cardId: currentCard.card.id,
+      word: currentCard.word.word,
+      rating: selectedRating,
+      responseTimeMs,
+      sentence,
+    };
+
+    // Fire-and-forget: don't block UI on network call
+    submitCardReviewAction(
+      sessionId,
+      currentCard.card.id,
+      selectedRating,
+      responseTimeMs,
+      sentence
+    );
+
+    setResults((prev) => [...prev, result]);
+    setCardPhase("feedback");
+    setFeedbackLoading(true);
+    setFeedbackText(null);
+
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word: currentCard.word.word,
+          sentence,
+          category: currentCard.word.category,
+        }),
+      });
+      const data = (await res.json()) as { feedback: string };
+      setFeedbackText(data.feedback);
+    } catch {
+      setFeedbackText("Could not get feedback right now. Try again later.");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, [currentCard, sessionId, selectedRating, sentence]);
+
+  const handleNext = useCallback(async () => {
+    await advanceToNext(results);
+  }, [advanceToNext, results]);
 
   if (phase === "loading") {
     return (
@@ -169,16 +242,45 @@ export default function SessionPage() {
           exampleSentence={currentCard.word.exampleSentence}
           translationHint={currentCard.word.translationHint}
           category={currentCard.word.category}
+          revealed={cardPhase !== "front"}
         />
-        <SentenceInput
-          value={sentence}
-          onChange={setSentence}
-          placeholder={`Write a sentence using "${currentCard.word.word}"...`}
-        />
-        <RatingButtons
-          onRate={handleRate}
-          disabled={sentence.trim().length < 5}
-        />
+
+        {cardPhase === "front" && (
+          <Button onClick={handleReveal} className="w-full" size="lg">
+            Reveal
+          </Button>
+        )}
+
+        {cardPhase === "revealed" && (
+          <RatingButtons onRate={handleSelectRating} />
+        )}
+
+        {cardPhase === "sentence" && (
+          <div className="space-y-4">
+            <SentenceInput
+              value={sentence}
+              onChange={setSentence}
+              placeholder={`Write a sentence using "${currentCard.word.word}"...`}
+            />
+            <Button
+              onClick={handleSentenceSubmit}
+              className="w-full"
+              disabled={sentence.trim().length < 5}
+            >
+              Submit
+            </Button>
+          </div>
+        )}
+
+        {cardPhase === "feedback" && (
+          <AIFeedback
+            word={currentCard.word.word}
+            sentence={sentence}
+            feedback={feedbackText}
+            isLoading={feedbackLoading}
+            onNext={handleNext}
+          />
+        )}
       </div>
     );
   }

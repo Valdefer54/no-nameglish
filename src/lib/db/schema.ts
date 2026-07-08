@@ -1,8 +1,8 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const vocabularyWords = sqliteTable("vocabulary_words", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const vocabularyWords = pgTable("vocabulary_words", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   word: text("word").notNull(),
   definition: text("definition").notNull(),
   exampleSentence: text("example_sentence").notNull(),
@@ -16,16 +16,16 @@ export const vocabularyWords = sqliteTable("vocabulary_words", {
       "general",
     ],
   }).notNull(),
-  addedAt: text("added_at")
+  addedAt: timestamp("added_at", { mode: "string" })
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()`),
   source: text("source", { enum: ["seed", "expansion"] })
     .notNull()
     .default("seed"),
 });
 
-export const cards = sqliteTable("cards", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const cards = pgTable("cards", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   wordId: integer("word_id")
     .notNull()
     .references(() => vocabularyWords.id),
@@ -38,10 +38,10 @@ export const cards = sqliteTable("cards", {
   learningSteps: integer("learning_steps").notNull().default(0),
   // 0=New, 1=Learning, 2=Review, 3=Relearning
   state: integer("state").notNull().default(0),
-  lastReview: text("last_review"),
-  nextReview: text("next_review")
+  lastReview: timestamp("last_review", { mode: "string" }),
+  nextReview: timestamp("next_review", { mode: "string" })
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()`),
   category: text("category", {
     enum: [
       "debate-connectors",
@@ -51,24 +51,24 @@ export const cards = sqliteTable("cards", {
       "general",
     ],
   }).notNull(),
-  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  createdAt: text("created_at")
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { mode: "string" })
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()`),
 });
 
-export const sessions = sqliteTable("sessions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  startedAt: text("started_at")
+export const sessions = pgTable("sessions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  startedAt: timestamp("started_at", { mode: "string" })
     .notNull()
-    .default(sql`(datetime('now'))`),
-  completedAt: text("completed_at"),
+    .default(sql`now()`),
+  completedAt: timestamp("completed_at", { mode: "string" }),
   totalCards: integer("total_cards").notNull().default(0),
   worstCardIds: text("worst_card_ids"), // JSON: number[]
 });
 
-export const cardReviews = sqliteTable("card_reviews", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const cardReviews = pgTable("card_reviews", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   sessionId: integer("session_id")
     .notNull()
     .references(() => sessions.id),
@@ -78,9 +78,9 @@ export const cardReviews = sqliteTable("card_reviews", {
   rating: integer("rating").notNull(),
   responseTimeMs: integer("response_time_ms").notNull(),
   sentence: text("sentence").notNull(),
-  reviewedAt: text("reviewed_at")
+  reviewedAt: timestamp("reviewed_at", { mode: "string" })
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()`),
 });
 
 export type InsertVocabularyWord = typeof vocabularyWords.$inferInsert;

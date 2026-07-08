@@ -5,7 +5,7 @@ import { newCardDefaults } from "@/lib/fsrs";
 import { eq, and } from "drizzle-orm";
 import { CATEGORIES } from "@/types";
 
-const INITIAL_ACTIVE_PER_DECK = 15;
+const INITIAL_ACTIVE_PER_DECK = 5;
 
 async function main() {
   console.log("Seeding vocabulary words...");
@@ -15,7 +15,7 @@ async function main() {
   }
 
   console.log(`Inserted ${INITIAL_VOCABULARY.length} words.`);
-  console.log("Activating first 15 cards per deck...");
+  console.log(`Activating first ${INITIAL_ACTIVE_PER_DECK} cards per deck...`);
 
   for (const category of CATEGORIES) {
     const wordsInDeck = await db

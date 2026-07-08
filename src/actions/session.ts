@@ -5,6 +5,7 @@ import { sessions, cards, cardReviews, vocabularyWords } from "@/lib/db/schema";
 import { eq, lte, and, sql } from "drizzle-orm";
 import { scheduleCard } from "@/lib/fsrs";
 import { Rating } from "ts-fsrs";
+import { DAILY_NEW_CARD_LIMIT } from "@/lib/session";
 import type { Rating as RatingType } from "@/types";
 
 export async function createSessionAction(): Promise<{ sessionId: number }> {
@@ -23,7 +24,17 @@ export async function getDueCardsAction() {
     .innerJoin(vocabularyWords, eq(cards.wordId, vocabularyWords.id))
     .where(and(eq(cards.isActive, true), lte(cards.nextReview, now)))
     .orderBy(cards.category, sql`RANDOM()`);
-  return rows;
+
+  // Cards in state 0 ("New") have never been studied. Review/learning cards
+  // (state 1-3) are already scheduled by FSRS and aren't capped.
+  const newCardCountByCategory = new Map<string, number>();
+  return rows.filter((r) => {
+    if (r.card.state !== 0) return true;
+    const count = newCardCountByCategory.get(r.card.category) ?? 0;
+    if (count >= DAILY_NEW_CARD_LIMIT) return false;
+    newCardCountByCategory.set(r.card.category, count + 1);
+    return true;
+  });
 }
 
 export async function submitCardReviewAction(

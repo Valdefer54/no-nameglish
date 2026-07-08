@@ -31,8 +31,8 @@ export function SentenceInput({
       />
       <p className="text-xs text-muted-foreground">
         {value.trim().length < 5
-          ? "Write at least 5 characters before rating"
-          : "✓ Ready to rate"}
+          ? "Write at least 5 characters before submitting"
+          : "✓ Ready to submit"}
       </p>
     </div>
   );

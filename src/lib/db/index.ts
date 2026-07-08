@@ -1,28 +1,19 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
-import path from "path";
-import fs from "fs";
 
 const globalForDb = globalThis as unknown as {
   _noNameglishDb: ReturnType<typeof drizzle<typeof schema>> | undefined;
 };
 
 function createConnection() {
-  const dbUrl = process.env.DATABASE_URL
-    ? path.resolve(/* turbopackIgnore: true */ process.cwd(), process.env.DATABASE_URL)
-    : path.join(/* turbopackIgnore: true */ process.cwd(), "data", "no-nameglish.db");
-
-  const dir = path.dirname(dbUrl);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  const connectionString = process.env.POSTGRES_URL;
+  if (!connectionString) {
+    throw new Error("POSTGRES_URL is not set");
   }
 
-  const sqlite = new Database(dbUrl);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-
-  return drizzle(sqlite, { schema });
+  const client = postgres(connectionString);
+  return drizzle(client, { schema });
 }
 
 export const db = globalForDb._noNameglishDb ?? createConnection();

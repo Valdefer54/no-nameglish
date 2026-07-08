@@ -1,5 +1,7 @@
 import type { ReviewResult, ScoredCard } from "@/types";
 
+export const DAILY_NEW_CARD_LIMIT = 5;
+
 export function computePerformanceScore(
   rating: number,
   responseTimeSeconds: number
@@ -23,7 +25,7 @@ export function findWorstThreeCards(reviews: ReviewResult[]): ScoredCard[] {
 export function shouldExpandDeck(
   activeCards: Array<{ stability: number; reps: number }>,
   todayNewCount: number,
-  dailyNewCardLimit: number = 5
+  dailyNewCardLimit: number = DAILY_NEW_CARD_LIMIT
 ): boolean {
   if (activeCards.length === 0) return false;
   if (todayNewCount >= dailyNewCardLimit) return false;
