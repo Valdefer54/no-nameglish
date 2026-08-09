@@ -4,61 +4,59 @@ import { db } from "@/lib/db";
 import { cards, vocabularyWords, sessions } from "@/lib/db/schema";
 import { eq, and, isNotNull, notExists, sql, desc } from "drizzle-orm";
 import { newCardDefaults } from "@/lib/fsrs";
-import { shouldExpandDeck, dateToISO } from "@/lib/session";
-import { CATEGORIES } from "@/types";
+import { learningSlotsToFill, dateToISO } from "@/lib/session";
+import { CATEGORIES, type VocabCategory } from "@/types";
 
 export async function expandDecksIfNeededAction(): Promise<void> {
-  const today = dateToISO(new Date());
+  // The learning pool is one global budget, not a per-deck one: count every
+  // active card that hasn't matured yet, regardless of category.
+  const activeCards = await db
+    .select({ stability: cards.stability, reps: cards.reps })
+    .from(cards)
+    .where(eq(cards.isActive, true));
 
-  for (const category of CATEGORIES) {
-    const activeCards = await db
-      .select({ stability: cards.stability, reps: cards.reps })
-      .from(cards)
-      .where(and(eq(cards.category, category), eq(cards.isActive, true)));
+  let slots = learningSlotsToFill(activeCards);
+  if (slots === 0) return;
 
-    const todayNew = await db
-      .select({ id: cards.id })
-      .from(cards)
+  // Fill the free slots round-robin so the pool stays spread across decks
+  // instead of draining whichever one happens to have words left.
+  const exhausted = new Set<VocabCategory>();
+  let categoryIndex = 0;
+
+  while (slots > 0 && exhausted.size < CATEGORIES.length) {
+    const category = CATEGORIES[categoryIndex];
+    categoryIndex = (categoryIndex + 1) % CATEGORIES.length;
+    if (exhausted.has(category)) continue;
+
+    const nextWord = await db
+      .select()
+      .from(vocabularyWords)
       .where(
         and(
-          eq(cards.category, category),
-          eq(cards.isActive, true),
-          eq(cards.state, 0),
-          sql`date(${cards.createdAt}) = ${today}`
-        )
-      );
-
-    let newToday = todayNew.length;
-
-    while (shouldExpandDeck(activeCards, newToday)) {
-      const nextWord = await db
-        .select()
-        .from(vocabularyWords)
-        .where(
-          and(
-            eq(vocabularyWords.category, category),
-            notExists(
-              db
-                .select({ id: cards.id })
-                .from(cards)
-                .where(eq(cards.wordId, vocabularyWords.id))
-            )
+          eq(vocabularyWords.category, category),
+          notExists(
+            db
+              .select({ id: cards.id })
+              .from(cards)
+              .where(eq(cards.wordId, vocabularyWords.id))
           )
         )
-        .limit(1);
+      )
+      .limit(1);
 
-      if (nextWord.length === 0) break;
-
-      await db.insert(cards).values({
-        wordId: nextWord[0].id,
-        category,
-        ...newCardDefaults(),
-        isActive: true,
-      });
-
-      activeCards.push({ stability: 0, reps: 0 });
-      newToday++;
+    if (nextWord.length === 0) {
+      exhausted.add(category);
+      continue;
     }
+
+    await db.insert(cards).values({
+      wordId: nextWord[0].id,
+      category,
+      ...newCardDefaults(),
+      isActive: true,
+    });
+
+    slots--;
   }
 }
 
