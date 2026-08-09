@@ -1,6 +1,7 @@
 import type { ReviewResult, ScoredCard } from "@/types";
 
 export const DAILY_NEW_CARD_LIMIT = 5;
+export const ACTIVE_LEARNING_TARGET = 5;
 
 export function computePerformanceScore(
   rating: number,
@@ -22,17 +23,19 @@ export function findWorstThreeCards(reviews: ReviewResult[]): ScoredCard[] {
   return scored.sort((a, b) => a.score - b.score).slice(0, 3);
 }
 
+export function isMatureCard(card: { stability: number; reps: number }): boolean {
+  return card.stability > 21 && card.reps >= 5;
+}
+
 export function shouldExpandDeck(
   activeCards: Array<{ stability: number; reps: number }>,
   todayNewCount: number,
-  dailyNewCardLimit: number = DAILY_NEW_CARD_LIMIT
+  dailyNewCardLimit: number = DAILY_NEW_CARD_LIMIT,
+  activeLearningTarget: number = ACTIVE_LEARNING_TARGET
 ): boolean {
-  if (activeCards.length === 0) return false;
   if (todayNewCount >= dailyNewCardLimit) return false;
-  const matureCount = activeCards.filter(
-    (c) => c.stability > 21 && c.reps >= 5
-  ).length;
-  return matureCount / activeCards.length > 0.7;
+  const learningCount = activeCards.filter((c) => !isMatureCard(c)).length;
+  return learningCount < activeLearningTarget;
 }
 
 export function dateToISO(date: Date): string {
