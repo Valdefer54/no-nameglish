@@ -31,32 +31,36 @@ export async function expandDecksIfNeededAction(): Promise<void> {
         )
       );
 
-    if (!shouldExpandDeck(activeCards, todayNew.length, hasDueCards)) continue;
+    let todayNewCount = todayNew.length;
 
-    const nextWord = await db
-      .select()
-      .from(vocabularyWords)
-      .where(
-        and(
-          eq(vocabularyWords.category, category),
-          notExists(
-            db
-              .select({ id: cards.id })
-              .from(cards)
-              .where(eq(cards.wordId, vocabularyWords.id))
+    while (shouldExpandDeck(activeCards, todayNewCount, hasDueCards)) {
+      const nextWord = await db
+        .select()
+        .from(vocabularyWords)
+        .where(
+          and(
+            eq(vocabularyWords.category, category),
+            notExists(
+              db
+                .select({ id: cards.id })
+                .from(cards)
+                .where(eq(cards.wordId, vocabularyWords.id))
+            )
           )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (nextWord.length === 0) continue;
+      if (nextWord.length === 0) break;
 
-    await db.insert(cards).values({
-      wordId: nextWord[0].id,
-      category,
-      ...newCardDefaults(),
-      isActive: true,
-    });
+      await db.insert(cards).values({
+        wordId: nextWord[0].id,
+        category,
+        ...newCardDefaults(),
+        isActive: true,
+      });
+
+      todayNewCount++;
+    }
   }
 }
 
