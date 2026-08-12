@@ -4,29 +4,34 @@ import { db } from "@/lib/db";
 import { cards, vocabularyWords, sessions } from "@/lib/db/schema";
 import { eq, and, isNotNull, notExists, sql, desc } from "drizzle-orm";
 import { newCardDefaults } from "@/lib/fsrs";
-import { learningSlotsToFill, dateToISO } from "@/lib/session";
-import { CATEGORIES, type VocabCategory } from "@/types";
+import { shouldExpandDeck, dateToISO } from "@/lib/session";
+import { CATEGORIES } from "@/types";
 
 export async function expandDecksIfNeededAction(): Promise<void> {
-  // The learning pool is one global budget, not a per-deck one: count every
-  // active card that hasn't matured yet, regardless of category.
-  const activeCards = await db
-    .select({ stability: cards.stability, reps: cards.reps })
-    .from(cards)
-    .where(eq(cards.isActive, true));
+  const today = dateToISO(new Date());
 
-  let slots = learningSlotsToFill(activeCards);
-  if (slots === 0) return;
+  for (const category of CATEGORIES) {
+    const activeCards = await db
+      .select({ stability: cards.stability, reps: cards.reps, nextReview: cards.nextReview })
+      .from(cards)
+      .where(and(eq(cards.category, category), eq(cards.isActive, true)));
 
-  // Fill the free slots round-robin so the pool stays spread across decks
-  // instead of draining whichever one happens to have words left.
-  const exhausted = new Set<VocabCategory>();
-  let categoryIndex = 0;
+    const now = new Date();
+    const hasDueCards = activeCards.some((c) => new Date(c.nextReview) <= now);
 
-  while (slots > 0 && exhausted.size < CATEGORIES.length) {
-    const category = CATEGORIES[categoryIndex];
-    categoryIndex = (categoryIndex + 1) % CATEGORIES.length;
-    if (exhausted.has(category)) continue;
+    const todayNew = await db
+      .select({ id: cards.id })
+      .from(cards)
+      .where(
+        and(
+          eq(cards.category, category),
+          eq(cards.isActive, true),
+          eq(cards.state, 0),
+          sql`date(${cards.createdAt}) = ${today}`
+        )
+      );
+
+    if (!shouldExpandDeck(activeCards, todayNew.length, hasDueCards)) continue;
 
     const nextWord = await db
       .select()
@@ -44,10 +49,7 @@ export async function expandDecksIfNeededAction(): Promise<void> {
       )
       .limit(1);
 
-    if (nextWord.length === 0) {
-      exhausted.add(category);
-      continue;
-    }
+    if (nextWord.length === 0) continue;
 
     await db.insert(cards).values({
       wordId: nextWord[0].id,
@@ -55,8 +57,6 @@ export async function expandDecksIfNeededAction(): Promise<void> {
       ...newCardDefaults(),
       isActive: true,
     });
-
-    slots--;
   }
 }
 

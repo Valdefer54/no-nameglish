@@ -1,5 +1,5 @@
 import { getDeckStatsAction } from "@/actions/decks";
-import { getCurrentStreakAction } from "@/actions/cards";
+import { getCurrentStreakAction, expandDecksIfNeededAction } from "@/actions/cards";
 import { getDueCardsAction } from "@/actions/session";
 import { StreakCounter } from "@/components/StreakCounter";
 import { DeckCard } from "@/components/DeckCard";
@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export default async function DashboardPage() {
+  await expandDecksIfNeededAction();
+
   const [streak, deckStats, dueCards] = await Promise.all([
     getCurrentStreakAction(),
     getDeckStatsAction(),

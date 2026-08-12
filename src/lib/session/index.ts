@@ -2,9 +2,6 @@ import type { ReviewResult, ScoredCard } from "@/types";
 
 export const DAILY_NEW_CARD_LIMIT = 5;
 
-// How many words may be "in learning" at once, across every category combined.
-export const ACTIVE_LEARNING_TARGET = 25;
-
 export function computePerformanceScore(
   rating: number,
   responseTimeSeconds: number
@@ -29,20 +26,20 @@ export function isMatureCard(card: { stability: number; reps: number }): boolean
   return card.stability > 21 && card.reps >= 5;
 }
 
-export function countLearningCards(
-  activeCards: Array<{ stability: number; reps: number }>
-): number {
-  return activeCards.filter((c) => !isMatureCard(c)).length;
-}
-
-// How many brand-new words to activate to bring the learning pool back up to
-// target. A word leaves the pool only by maturing, so this is normally a
-// trickle of one or two rather than a batch.
-export function learningSlotsToFill(
+export function shouldExpandDeck(
   activeCards: Array<{ stability: number; reps: number }>,
-  activeLearningTarget: number = ACTIVE_LEARNING_TARGET
-): number {
-  return Math.max(activeLearningTarget - countLearningCards(activeCards), 0);
+  todayNewCount: number,
+  hasDueCards: boolean,
+  dailyNewCardLimit: number = DAILY_NEW_CARD_LIMIT
+): boolean {
+  if (activeCards.length === 0) return false;
+  if (todayNewCount >= dailyNewCardLimit) return false;
+  // Nothing to study today: pull in a new card instead of leaving the deck empty.
+  if (!hasDueCards) return true;
+  const matureCount = activeCards.filter(
+    (c) => c.stability > 21 && c.reps >= 5
+  ).length;
+  return matureCount / activeCards.length > 0.7;
 }
 
 export function dateToISO(date: Date): string {

@@ -16,7 +16,7 @@ export const vocabularyWords = pgTable("vocabulary_words", {
       "general",
     ],
   }).notNull(),
-  addedAt: timestamp("added_at", { mode: "string" })
+  addedAt: timestamp("added_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
   source: text("source", { enum: ["seed", "expansion"] })
@@ -38,8 +38,8 @@ export const cards = pgTable("cards", {
   learningSteps: integer("learning_steps").notNull().default(0),
   // 0=New, 1=Learning, 2=Review, 3=Relearning
   state: integer("state").notNull().default(0),
-  lastReview: timestamp("last_review", { mode: "string" }),
-  nextReview: timestamp("next_review", { mode: "string" })
+  lastReview: timestamp("last_review", { mode: "string", withTimezone: true }),
+  nextReview: timestamp("next_review", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
   category: text("category", {
@@ -52,17 +52,17 @@ export const cards = pgTable("cards", {
     ],
   }).notNull(),
   isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at", { mode: "string" })
+  createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
 });
 
 export const sessions = pgTable("sessions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  startedAt: timestamp("started_at", { mode: "string" })
+  startedAt: timestamp("started_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
-  completedAt: timestamp("completed_at", { mode: "string" }),
+  completedAt: timestamp("completed_at", { mode: "string", withTimezone: true }),
   totalCards: integer("total_cards").notNull().default(0),
   worstCardIds: text("worst_card_ids"), // JSON: number[]
 });
@@ -78,7 +78,7 @@ export const cardReviews = pgTable("card_reviews", {
   rating: integer("rating").notNull(),
   responseTimeMs: integer("response_time_ms").notNull(),
   sentence: text("sentence").notNull(),
-  reviewedAt: timestamp("reviewed_at", { mode: "string" })
+  reviewedAt: timestamp("reviewed_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
 });
