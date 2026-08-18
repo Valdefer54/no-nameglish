@@ -1,5 +1,6 @@
 import type { ReviewResult, ScoredCard } from "@/types";
 
+export const MIN_WORDS_PER_CATEGORY = 5;
 export const DAILY_NEW_CARD_LIMIT = 5;
 
 export function computePerformanceScore(
@@ -26,6 +27,13 @@ export function isMatureCard(card: { stability: number; reps: number }): boolean
   return card.stability > 21 && card.reps >= 5;
 }
 
+export function getMissingCardsForCategory(
+  dueCount: number,
+  targetCount: number = MIN_WORDS_PER_CATEGORY
+): number {
+  return Math.max(0, targetCount - dueCount);
+}
+
 export function shouldExpandDeck(
   activeCards: Array<{ stability: number; reps: number }>,
   todayNewCount: number,
@@ -45,3 +53,4 @@ export function shouldExpandDeck(
 export function dateToISO(date: Date): string {
   return date.toISOString().split("T")[0];
 }
+

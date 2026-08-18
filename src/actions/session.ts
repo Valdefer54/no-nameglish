@@ -23,7 +23,11 @@ export async function getDueCardsAction() {
     .from(cards)
     .innerJoin(vocabularyWords, eq(cards.wordId, vocabularyWords.id))
     .where(and(eq(cards.isActive, true), lte(cards.nextReview, now)))
-    .orderBy(cards.category, sql`RANDOM()`);
+    .orderBy(
+      cards.category,
+      sql`CASE WHEN ${cards.state} = 0 THEN 1 ELSE 0 END`,
+      sql`RANDOM()`
+    );
 
   // Cards in state 0 ("New") have never been studied. Review/learning cards
   // (state 1-3) are already scheduled by FSRS and aren't capped.

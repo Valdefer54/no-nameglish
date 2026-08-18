@@ -1,7 +1,9 @@
 import { getDeckStatsAction } from "@/actions/decks";
+import { expandDecksIfNeededAction } from "@/actions/cards";
 import { DeckCard } from "@/components/DeckCard";
 
 export default async function DecksPage() {
+  await expandDecksIfNeededAction();
   const stats = await getDeckStatsAction();
   const totalActive = stats.reduce((s, d) => s + d.totalActive, 0);
   const totalMature = stats.reduce((s, d) => s + d.matureCount, 0);
