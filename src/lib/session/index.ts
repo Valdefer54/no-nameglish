@@ -15,7 +15,9 @@ export function computePerformanceScore(
 export function findWorstThreeCards(reviews: ReviewResult[]): ScoredCard[] {
   const scored: ScoredCard[] = reviews.map((r) => ({
     cardId: r.cardId,
-    word: r.word,
+    targetChunk: r.targetChunk || r.word || "",
+    word: r.targetChunk || r.word || "",
+    sentence: r.sentence,
     rating: r.rating,
     responseTimeSeconds: r.responseTimeMs / 1000,
     score: computePerformanceScore(r.rating, r.responseTimeMs / 1000),
@@ -53,4 +55,3 @@ export function shouldExpandDeck(
 export function dateToISO(date: Date): string {
   return date.toISOString().split("T")[0];
 }
-

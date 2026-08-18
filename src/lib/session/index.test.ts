@@ -14,6 +14,7 @@ import type { ReviewResult } from "@/types";
 function review(overrides: Partial<ReviewResult> = {}): ReviewResult {
   return {
     cardId: 1,
+    targetChunk: "however",
     word: "however",
     rating: 3,
     responseTimeMs: 5000,

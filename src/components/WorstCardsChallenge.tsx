@@ -26,32 +26,38 @@ export function WorstCardsChallenge({ worstCards, onComplete }: Props) {
       <div>
         <h2 className="text-2xl font-bold">Reinforcement Challenge</h2>
         <p className="text-muted-foreground mt-1">
-          These were your hardest words this session. Write a new sentence for each one.
+          These were your hardest items this session. Write a new sentence for each target chunk.
         </p>
       </div>
 
       <div className="space-y-6">
-        {worstCards.map((card, i) => (
-          <div key={card.cardId} className="space-y-2 rounded-lg border p-4 bg-red-50 dark:bg-red-950/20">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-xl">{card.word}</span>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
-                {RATING_LABELS[card.rating]} · {card.responseTimeSeconds.toFixed(0)}s
-              </span>
+        {worstCards.map((card, i) => {
+          const displayChunk = card.targetChunk || card.word || "";
+          return (
+            <div
+              key={card.cardId}
+              className="space-y-2 rounded-lg border p-4 bg-red-50 dark:bg-red-950/20"
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-xl">{displayChunk}</span>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
+                  {RATING_LABELS[card.rating]} · {card.responseTimeSeconds.toFixed(0)}s
+                </span>
+              </div>
+              <Textarea
+                value={sentences[i]}
+                onChange={(e) => {
+                  const next = [...sentences];
+                  next[i] = e.target.value;
+                  setSentences(next);
+                }}
+                placeholder={`Use "${displayChunk}" in a sentence...`}
+                rows={2}
+                className="resize-none"
+              />
             </div>
-            <Textarea
-              value={sentences[i]}
-              onChange={(e) => {
-                const next = [...sentences];
-                next[i] = e.target.value;
-                setSentences(next);
-              }}
-              placeholder={`Use "${card.word}" in a sentence...`}
-              rows={2}
-              className="resize-none"
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <Button onClick={onComplete} disabled={!allFilled} className="w-full" size="lg">

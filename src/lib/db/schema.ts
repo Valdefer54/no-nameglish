@@ -1,34 +1,20 @@
 import { pgTable, text, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const vocabularyWords = pgTable("vocabulary_words", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  word: text("word").notNull(),
-  definition: text("definition").notNull(),
-  exampleSentence: text("example_sentence").notNull(),
-  translationHint: text("translation_hint"),
-  category: text("category", {
-    enum: [
-      "debate-connectors",
-      "precision-verbs",
-      "intensity-modifiers",
-      "phrasal-verbs",
-      "general",
-    ],
-  }).notNull(),
-  addedAt: timestamp("added_at", { mode: "string", withTimezone: true })
-    .notNull()
-    .default(sql`now()`),
-  source: text("source", { enum: ["seed", "expansion"] })
-    .notNull()
-    .default("seed"),
-});
-
 export const cards = pgTable("cards", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  wordId: integer("word_id")
+  deckId: text("deck_id"),
+  sentence: text("sentence").notNull(),
+  targetChunk: text("target_chunk").notNull(),
+  meaning: text("meaning").notNull(),
+  hint: text("hint"),
+  sourceContext: text("source_context"),
+  
+  // FSRS spaced repetition columns
+  state: integer("state").notNull().default(0), // 0=New, 1=Learning, 2=Review, 3=Relearning
+  due: timestamp("due", { mode: "string", withTimezone: true })
     .notNull()
-    .references(() => vocabularyWords.id),
+    .default(sql`now()`),
   stability: real("stability").notNull().default(0),
   difficulty: real("difficulty").notNull().default(0),
   elapsedDays: real("elapsed_days").notNull().default(0),
@@ -36,21 +22,8 @@ export const cards = pgTable("cards", {
   reps: integer("reps").notNull().default(0),
   lapses: integer("lapses").notNull().default(0),
   learningSteps: integer("learning_steps").notNull().default(0),
-  // 0=New, 1=Learning, 2=Review, 3=Relearning
-  state: integer("state").notNull().default(0),
   lastReview: timestamp("last_review", { mode: "string", withTimezone: true }),
-  nextReview: timestamp("next_review", { mode: "string", withTimezone: true })
-    .notNull()
-    .default(sql`now()`),
-  category: text("category", {
-    enum: [
-      "debate-connectors",
-      "precision-verbs",
-      "intensity-modifiers",
-      "phrasal-verbs",
-      "general",
-    ],
-  }).notNull(),
+  
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
     .notNull()
@@ -83,8 +56,6 @@ export const cardReviews = pgTable("card_reviews", {
     .default(sql`now()`),
 });
 
-export type InsertVocabularyWord = typeof vocabularyWords.$inferInsert;
-export type SelectVocabularyWord = typeof vocabularyWords.$inferSelect;
 export type InsertCard = typeof cards.$inferInsert;
 export type SelectCard = typeof cards.$inferSelect;
 export type InsertSession = typeof sessions.$inferInsert;

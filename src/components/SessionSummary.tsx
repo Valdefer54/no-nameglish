@@ -4,8 +4,11 @@ interface ReviewRow {
     rating: number;
     responseTimeMs: number;
   };
-  card: { id: number };
-  word: { word: string };
+  card: {
+    id: number;
+    targetChunk: string;
+    [key: string]: unknown;
+  };
   isWorst: boolean;
 }
 
@@ -51,7 +54,7 @@ export function SessionSummary({ reviews }: Props) {
                 {r.isWorst && (
                   <span className="text-xs text-red-500 font-semibold shrink-0">WORST</span>
                 )}
-                <span className="font-medium truncate">{r.word.word}</span>
+                <span className="font-medium truncate">{r.card.targetChunk}</span>
                 <span className="text-xs text-muted-foreground shrink-0">{secs}s</span>
               </div>
               <span className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${info.color}`}>

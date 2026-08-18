@@ -19,7 +19,7 @@ import {
 } from "@/actions/session";
 import { expandDecksIfNeededAction } from "@/actions/cards";
 import { findWorstThreeCards } from "@/lib/session";
-import type { CardWithWord, ReviewResult, ScoredCard, Rating } from "@/types";
+import type { Card, ReviewResult, ScoredCard, Rating } from "@/types";
 
 type Phase = "loading" | "empty" | "reviewing" | "reinforcement" | "monologue";
 type CardPhase = "front" | "revealed" | "sentence" | "feedback";
@@ -28,7 +28,7 @@ export default function SessionPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [sessionId, setSessionId] = useState<number | null>(null);
-  const [dueCards, setDueCards] = useState<CardWithWord[]>([]);
+  const [dueCards, setDueCards] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [results, setResults] = useState<ReviewResult[]>([]);
   const [worstCards, setWorstCards] = useState<ScoredCard[]>([]);
@@ -45,49 +45,19 @@ export default function SessionPage() {
     async function init() {
       await expandDecksIfNeededAction();
 
-      const [{ sessionId: sid }, rawCards] = await Promise.all([
+      const [{ sessionId: sid }, cardsList] = await Promise.all([
         createSessionAction(),
         getDueCardsAction(),
       ]);
 
       setSessionId(sid);
 
-      if (rawCards.length === 0) {
+      if (cardsList.length === 0) {
         setPhase("empty");
         return;
       }
 
-      // Map DB rows to typed CardWithWord objects
-      const typed: CardWithWord[] = rawCards.map((r) => ({
-        card: {
-          id: r.card.id,
-          wordId: r.card.wordId,
-          stability: r.card.stability,
-          difficulty: r.card.difficulty,
-          elapsedDays: r.card.elapsedDays,
-          scheduledDays: r.card.scheduledDays,
-          reps: r.card.reps,
-          lapses: r.card.lapses,
-          state: r.card.state as 0 | 1 | 2 | 3,
-          lastReview: r.card.lastReview,
-          nextReview: r.card.nextReview,
-          category: r.card.category as CardWithWord["card"]["category"],
-          isActive: r.card.isActive,
-          createdAt: r.card.createdAt,
-        },
-        word: {
-          id: r.word.id,
-          word: r.word.word,
-          definition: r.word.definition,
-          exampleSentence: r.word.exampleSentence,
-          translationHint: r.word.translationHint,
-          category: r.word.category as CardWithWord["word"]["category"],
-          addedAt: r.word.addedAt,
-          source: r.word.source as "seed" | "expansion",
-        },
-      }));
-
-      setDueCards(typed);
+      setDueCards(cardsList);
       cardStartTimeRef.current = Date.now();
       setPhase("reviewing");
     }
@@ -95,7 +65,7 @@ export default function SessionPage() {
     init();
   }, []);
 
-  const currentCard = dueCards[currentIndex] as CardWithWord | undefined;
+  const currentCard = dueCards[currentIndex] as Card | undefined;
   const progress = dueCards.length > 0 ? (currentIndex / dueCards.length) * 100 : 0;
 
   const handleReveal = useCallback(() => {
@@ -132,18 +102,19 @@ export default function SessionPage() {
     (rating: Rating) => {
       if (!currentCard || sessionId === null) return;
 
-      // "Again" means the word went badly — skip writing a sentence for it.
+      // "Again" means the card went badly — skip writing a sentence for it.
       if (rating === 1) {
         const responseTimeMs = Date.now() - cardStartTimeRef.current;
         const result: ReviewResult = {
-          cardId: currentCard.card.id,
-          word: currentCard.word.word,
+          cardId: currentCard.id,
+          targetChunk: currentCard.targetChunk,
+          word: currentCard.targetChunk,
           rating,
           responseTimeMs,
           sentence: "",
         };
 
-        submitCardReviewAction(sessionId, currentCard.card.id, rating, responseTimeMs, "");
+        submitCardReviewAction(sessionId, currentCard.id, rating, responseTimeMs, "");
 
         const newResults = [...results, result];
         setResults(newResults);
@@ -162,8 +133,9 @@ export default function SessionPage() {
 
     const responseTimeMs = Date.now() - cardStartTimeRef.current;
     const result: ReviewResult = {
-      cardId: currentCard.card.id,
-      word: currentCard.word.word,
+      cardId: currentCard.id,
+      targetChunk: currentCard.targetChunk,
+      word: currentCard.targetChunk,
       rating: selectedRating,
       responseTimeMs,
       sentence,
@@ -172,7 +144,7 @@ export default function SessionPage() {
     // Fire-and-forget: don't block UI on network call
     submitCardReviewAction(
       sessionId,
-      currentCard.card.id,
+      currentCard.id,
       selectedRating,
       responseTimeMs,
       sentence
@@ -188,9 +160,9 @@ export default function SessionPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          word: currentCard.word.word,
+          word: currentCard.targetChunk,
           sentence,
-          category: currentCard.word.category,
+          category: currentCard.deckId,
         }),
       });
       const data = (await res.json()) as { feedback: string };
@@ -237,11 +209,12 @@ export default function SessionPage() {
         </div>
         <Progress value={progress} className="h-1.5" />
         <CardReview
-          word={currentCard.word.word}
-          definition={currentCard.word.definition}
-          exampleSentence={currentCard.word.exampleSentence}
-          translationHint={currentCard.word.translationHint}
-          category={currentCard.word.category}
+          sentence={currentCard.sentence}
+          targetChunk={currentCard.targetChunk}
+          meaning={currentCard.meaning}
+          hint={currentCard.hint}
+          sourceContext={currentCard.sourceContext}
+          category={currentCard.deckId}
           revealed={cardPhase !== "front"}
         />
 
@@ -260,7 +233,9 @@ export default function SessionPage() {
             <SentenceInput
               value={sentence}
               onChange={setSentence}
-              placeholder={`Write a sentence using "${currentCard.word.word}"...`}
+              onSubmit={handleSentenceSubmit}
+              targetChunk={currentCard.targetChunk}
+              placeholder={`Write a sentence using "${currentCard.targetChunk}"...`}
             />
             <Button
               onClick={handleSentenceSubmit}
@@ -274,7 +249,7 @@ export default function SessionPage() {
 
         {cardPhase === "feedback" && (
           <AIFeedback
-            word={currentCard.word.word}
+            word={currentCard.targetChunk}
             sentence={sentence}
             feedback={feedbackText}
             isLoading={feedbackLoading}
@@ -297,7 +272,7 @@ export default function SessionPage() {
   if (phase === "monologue") {
     return (
       <MonologuePrompt
-        words={worstCards.map((w) => w.word)}
+        words={worstCards.map((w) => w.targetChunk || w.word || "")}
         onComplete={() => router.push(`/session/${sessionId}/summary`)}
       />
     );

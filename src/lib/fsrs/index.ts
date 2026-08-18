@@ -13,7 +13,7 @@ const f = fsrs(params);
 
 export function dbCardToFSRS(dbCard: SelectCard): FSRSCard {
   return {
-    due: new Date(dbCard.nextReview),
+    due: new Date(dbCard.due),
     stability: dbCard.stability,
     difficulty: dbCard.difficulty,
     elapsed_days: dbCard.elapsedDays,
@@ -37,7 +37,7 @@ export function fsrsCardToDbUpdate(fsrsCard: FSRSCard) {
     learningSteps: fsrsCard.learning_steps,
     state: fsrsCard.state as number,
     lastReview: fsrsCard.last_review?.toISOString() ?? null,
-    nextReview: fsrsCard.due.toISOString(),
+    due: fsrsCard.due.toISOString(),
   };
 }
 
@@ -65,7 +65,7 @@ export function newCardDefaults() {
     learningSteps: empty.learning_steps,
     state: empty.state as number,
     lastReview: null,
-    nextReview: new Date().toISOString(),
+    due: new Date().toISOString(),
   };
 }
 

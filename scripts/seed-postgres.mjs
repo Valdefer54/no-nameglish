@@ -1,32 +1,168 @@
 import { readFileSync } from "fs";
-import { createConnection } from "net";
-import { Client } from "pg";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { pgTable, text, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
-const DB = {
-  host: "localhost",
-  port: 5434,
-  user: "nameglish",
-  password: "nameglish123",
-  database: "no_nameglish",
-};
+// Define the cards table matching Drizzle schema
+export const cards = pgTable("cards", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  deckId: text("deck_id"),
+  sentence: text("sentence").notNull(),
+  targetChunk: text("target_chunk").notNull(),
+  meaning: text("meaning").notNull(),
+  hint: text("hint"),
+  sourceContext: text("source_context"),
+  state: integer("state").notNull().default(0),
+  due: timestamp("due", { mode: "string", withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+  stability: real("stability").notNull().default(0),
+  difficulty: real("difficulty").notNull().default(0),
+  elapsedDays: real("elapsed_days").notNull().default(0),
+  scheduledDays: real("scheduled_days").notNull().default(0),
+  reps: integer("reps").notNull().default(0),
+  lapses: integer("lapses").notNull().default(0),
+  learningSteps: integer("learning_steps").notNull().default(0),
+  lastReview: timestamp("last_review", { mode: "string", withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
+const DB_CONNECTION =
+  process.env.POSTGRES_URL ||
+  "postgres://nameglish:nameglish123@localhost:5434/no_nameglish";
 
 const WORD_LINE = /^\s+(\d+)\.\s+(.+?)\s*$/;
 
 const SECTION_TYPES = {
   1: "general",
-  2: "intensity-modifier",
-  3: "precision-verb",
-  4: "debate-connector",
-  5: "phrasal-verb",
+  2: "intensity-modifiers",
+  3: "precision-verbs",
+  4: "debate-connectors",
+  5: "phrasal-verbs",
 };
+
+// Specific mock sentence transformations for key vocabulary entries
+const SPECIFIC_TRANSFORMATIONS = {
+  spike: {
+    sentence: "The system crashed due to a sudden {{spike}} in traffic.",
+    meaning: "A sharp increase.",
+    hint: "Think of an abrupt peak or surge in numbers.",
+  },
+  abandon: {
+    sentence: "The team had to {{abandon}} the legacy codebase after critical vulnerabilities were found.",
+    meaning: "To cease supporting or give up completely.",
+    hint: "To leave behind or discontinue.",
+  },
+  ability: {
+    sentence: "Her {{ability}} to decompose complex problems made her an invaluable lead engineer.",
+    meaning: "The physical or mental power to do something.",
+    hint: "Capacity, skill, or talent.",
+  },
+  accelerate: {
+    sentence: "They adopted modern CI/CD tooling to {{accelerate}} the deployment pipeline.",
+    meaning: "To increase speed or progress more rapidly.",
+    hint: "Speed up or quicken.",
+  },
+  furthermore: {
+    sentence: "The benchmark results were conclusive; {{furthermore}}, memory usage dropped by half.",
+    meaning: "In addition; moreover.",
+    hint: "Connector used to introduce an additional corroborating point.",
+  },
+  drastically: {
+    sentence: "Optimizing the query execution plan {{drastically}} reduced database response times.",
+    meaning: "In an extreme, severe, or substantial manner.",
+    hint: "Significantly or intensely.",
+  },
+  "break down": {
+    sentence: "We need to {{break down}} this monolithic architecture into modular microservices.",
+    meaning: "To divide into smaller parts for easier analysis or processing.",
+    hint: "Separate into constituent components.",
+  },
+};
+
+/**
+ * Generate a cloze deletion record from a word and category
+ */
+function createClozeCard(word, category) {
+  const normalizedWord = word.trim().toLowerCase();
+
+  if (SPECIFIC_TRANSFORMATIONS[normalizedWord]) {
+    const item = SPECIFIC_TRANSFORMATIONS[normalizedWord];
+    return {
+      sentence: item.sentence,
+      targetChunk: word,
+      meaning: item.meaning,
+      hint: item.hint,
+      sourceContext: `Oxford 5000 / ${category}`,
+      deckId: category,
+    };
+  }
+
+  // Category-tailored templates for general transformation
+  switch (category) {
+    case "debate-connectors":
+      return {
+        sentence: `The hypothesis appeared promising; {{${word}}}, additional empirical trials revealed notable edge cases.`,
+        targetChunk: word,
+        meaning: `Discourse connector expressing logical transition (${word}).`,
+        hint: `Used to connect arguments or articulate reasoning.`,
+        sourceContext: "Academic Debate & Argumentation",
+        deckId: category,
+      };
+
+    case "precision-verbs":
+      return {
+        sentence: `Senior engineers decided to {{${word}}} the system architecture to prevent future bottlenecks.`,
+        targetChunk: word,
+        meaning: `To perform the action of '${word}' with precision and intent.`,
+        hint: `Action verb: to ${word}.`,
+        sourceContext: "Technical & Professional Discourse",
+        deckId: category,
+      };
+
+    case "intensity-modifiers":
+      return {
+        sentence: `The overall system efficiency improved {{${word}}} following the runtime optimizations.`,
+        targetChunk: word,
+        meaning: `Modifying intensity or degree in a ${word} manner.`,
+        hint: `Modifier indicating degree (${word}).`,
+        sourceContext: "Advanced English Lexicon",
+        deckId: category,
+      };
+
+    case "phrasal-verbs":
+      return {
+        sentence: `During the incident review, the team worked together to {{${word}}} and mitigate further risk.`,
+        targetChunk: word,
+        meaning: `Idiomatic phrasal expression: ${word}.`,
+        hint: `Multi-word verb phrase (${word}).`,
+        sourceContext: "Native Idiomatic Expressions",
+        deckId: category,
+      };
+
+    case "general":
+    default:
+      return {
+        sentence: `The team analyzed how the concept of {{${word}}} influenced the final outcome of the project.`,
+        targetChunk: word,
+        meaning: `Definition and usage of the term '${word}'.`,
+        hint: `Core vocabulary term: ${word}.`,
+        sourceContext: "Oxford 5000 Corpus",
+        deckId: category,
+      };
+  }
+}
 
 function parseWords(filePath) {
   const lines = readFileSync(filePath, "utf8").split("\n");
-  const words = [];
+  const entries = [];
   let currentSection = 0;
 
   for (const line of lines) {
-    // Detect section headers
     const sectionMatch = line.match(/^SECCION\s+(\d+):/);
     if (sectionMatch) {
       currentSection = parseInt(sectionMatch[1], 10);
@@ -41,46 +177,69 @@ function parseWords(filePath) {
     const word = wordMatch[2].trim();
     if (!word) continue;
 
-    const type = SECTION_TYPES[currentSection];
-    if (!type) continue;
+    const category = SECTION_TYPES[currentSection];
+    if (!category) continue;
 
-    words.push({ word, type });
+    entries.push({ word, category });
   }
 
-  return words;
+  return entries;
 }
 
 async function seed() {
-  const words = parseWords("./5000_palabras_ingles_B2-C1.txt");
-  console.log(`Parsed ${words.length} words from txt.`);
+  console.log("Reading and parsing word list...");
+  const rawWords = parseWords("./5000_palabras_ingles_B2-C1.txt");
+  console.log(`Parsed ${rawWords.length} entries from text file.`);
 
-  const client = new Client(DB);
-  await client.connect();
+  // Transform words into Cloze Sentence Mining records
+  const clozeCards = rawWords.map(({ word, category }) =>
+    createClozeCard(word, category)
+  );
 
-  // Batch insert in chunks of 500
-  const CHUNK = 500;
+  console.log(`Generated ${clozeCards.length} cloze deletion cards.`);
+
+  const client = postgres(DB_CONNECTION, { max: 1 });
+  const db = drizzle(client);
+
+  console.log("Connecting to PostgreSQL and seeding cards via Drizzle ORM...");
+
+  const CHUNK_SIZE = 500;
   let inserted = 0;
 
-  for (let i = 0; i < words.length; i += CHUNK) {
-    const chunk = words.slice(i, i + CHUNK);
-    const values = chunk
-      .map((_, j) => `($${j * 2 + 1}, $${j * 2 + 2}::word_type)`)
-      .join(", ");
-    const params = chunk.flatMap((w) => [w.word, w.type]);
-
-    await client.query(
-      `INSERT INTO vocabulary_words (word, type) VALUES ${values}`,
-      params
+  for (let i = 0; i < clozeCards.length; i += CHUNK_SIZE) {
+    const chunk = clozeCards.slice(i, i + CHUNK_SIZE);
+    
+    // Batch insert using Drizzle ORM
+    await db.insert(cards).values(
+      chunk.map((item) => ({
+        sentence: item.sentence,
+        targetChunk: item.targetChunk,
+        meaning: item.meaning,
+        hint: item.hint,
+        sourceContext: item.sourceContext,
+        deckId: item.deckId,
+        state: 0,
+        due: new Date().toISOString(),
+        stability: 0,
+        difficulty: 0,
+        elapsedDays: 0,
+        scheduledDays: 0,
+        reps: 0,
+        lapses: 0,
+        learningSteps: 0,
+        isActive: true,
+      }))
     );
+
     inserted += chunk.length;
-    console.log(`  Inserted ${inserted}/${words.length}...`);
+    console.log(`  Inserted ${inserted}/${clozeCards.length} cards...`);
   }
 
   await client.end();
-  console.log(`\nDone. ${inserted} words inserted into PostgreSQL.`);
+  console.log(`\nDone! Successfully seeded ${inserted} sentence mining cards into PostgreSQL.`);
 }
 
 seed().catch((err) => {
-  console.error(err);
+  console.error("Error during seeding:", err);
   process.exit(1);
 });

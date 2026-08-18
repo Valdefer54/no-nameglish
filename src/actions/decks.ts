@@ -12,10 +12,10 @@ export async function getDeckStatsAction(): Promise<DeckStats[]> {
       const allCards = await db
         .select()
         .from(cards)
-        .where(and(eq(cards.category, category), eq(cards.isActive, true)));
+        .where(and(eq(cards.deckId, category), eq(cards.isActive, true)));
 
       const now = new Date();
-      const dueCards = allCards.filter((c) => new Date(c.nextReview) <= now);
+      const dueCards = allCards.filter((c) => new Date(c.due) <= now);
       const dueNewCount = dueCards.filter((c) => c.state === 0).length;
       const dueOtherCount = dueCards.length - dueNewCount;
 

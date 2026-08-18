@@ -37,37 +37,26 @@ export const CATEGORY_COLORS: Record<VocabCategory, string> = {
   general: "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200",
 };
 
-export interface VocabularyWord {
-  id: number;
-  word: string;
-  definition: string;
-  exampleSentence: string;
-  translationHint: string | null;
-  category: VocabCategory;
-  addedAt: string;
-  source: WordSource;
-}
-
 export interface Card {
   id: number;
-  wordId: number;
+  deckId?: string | null;
+  sentence: string;
+  targetChunk: string;
+  meaning: string;
+  hint: string | null;
+  sourceContext: string | null;
+  state: CardState;
+  due: string;
   stability: number;
   difficulty: number;
   elapsedDays: number;
   scheduledDays: number;
   reps: number;
   lapses: number;
-  state: CardState;
+  learningSteps: number;
   lastReview: string | null;
-  nextReview: string;
-  category: VocabCategory;
   isActive: boolean;
   createdAt: string;
-}
-
-export interface CardWithWord {
-  card: Card;
-  word: VocabularyWord;
 }
 
 export interface Session {
@@ -100,15 +89,19 @@ export interface DeckStats {
 
 export interface ReviewResult {
   cardId: number;
-  word: string;
+  targetChunk: string;
+  word?: string;
+  sentence: string;
   rating: Rating;
   responseTimeMs: number;
-  sentence: string;
 }
 
 export interface ScoredCard {
   cardId: number;
-  word: string;
+  targetChunk: string;
+  word?: string;
+  sentence?: string;
+  meaning?: string;
   score: number;
   rating: Rating;
   responseTimeSeconds: number;

@@ -21,7 +21,7 @@ export default async function SummaryPage({ params }: Props) {
 
   const worstWords = reviews
     .filter((r) => worstCardIds.includes(r.card.id))
-    .map((r) => r.word.word);
+    .map((r) => r.card.targetChunk);
 
   const duration = session.completedAt
     ? Math.round(

@@ -1,9 +1,8 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { cards, vocabularyWords, sessions } from "@/lib/db/schema";
-import { eq, and, isNotNull, notExists, sql, desc, lte } from "drizzle-orm";
-import { newCardDefaults } from "@/lib/fsrs";
+import { cards, sessions } from "@/lib/db/schema";
+import { eq, and, isNotNull, sql, desc, lte } from "drizzle-orm";
 import { MIN_WORDS_PER_CATEGORY, dateToISO } from "@/lib/session";
 import { CATEGORIES } from "@/types";
 
@@ -17,68 +16,37 @@ export async function expandDecksIfNeededAction(): Promise<void> {
       .from(cards)
       .where(
         and(
-          eq(cards.category, category),
+          eq(cards.deckId, category),
           eq(cards.isActive, true),
-          lte(cards.nextReview, now)
+          lte(cards.due, now)
         )
       );
 
     const needed = Math.max(0, MIN_WORDS_PER_CATEGORY - dueActiveCards.length);
     if (needed <= 0) continue;
 
-    // 2. Activate new words from vocabularyWords for this category
-    const unactivatedWords = await db
-      .select({ id: vocabularyWords.id })
-      .from(vocabularyWords)
+    // 2. Pull ahead upcoming cards scheduled in the future if needed
+    const upcomingCards = await db
+      .select({ id: cards.id })
+      .from(cards)
       .where(
         and(
-          eq(vocabularyWords.category, category),
-          notExists(
-            db
-              .select({ id: cards.id })
-              .from(cards)
-              .where(eq(cards.wordId, vocabularyWords.id))
-          )
+          eq(cards.deckId, category),
+          eq(cards.isActive, true),
+          sql`${cards.due} > ${now}`
         )
       )
+      .orderBy(cards.due)
       .limit(needed);
 
-    for (const word of unactivatedWords) {
-      await db.insert(cards).values({
-        wordId: word.id,
-        category,
-        ...newCardDefaults(),
-        isActive: true,
-      });
-    }
-
-    // 3. If there are not enough unactivated words in vocabularyWords,
-    // pull ahead active cards scheduled in the future so the category has at least 5 words
-    const stillNeeded = needed - unactivatedWords.length;
-    if (stillNeeded > 0) {
-      const upcomingCards = await db
-        .select({ id: cards.id })
-        .from(cards)
-        .where(
-          and(
-            eq(cards.category, category),
-            eq(cards.isActive, true),
-            sql`${cards.nextReview} > ${now}`
-          )
-        )
-        .orderBy(cards.nextReview)
-        .limit(stillNeeded);
-
-      for (const card of upcomingCards) {
-        await db
-          .update(cards)
-          .set({ nextReview: now })
-          .where(eq(cards.id, card.id));
-      }
+    for (const card of upcomingCards) {
+      await db
+        .update(cards)
+        .set({ due: now })
+        .where(eq(cards.id, card.id));
     }
   }
 }
-
 
 export async function getCurrentStreakAction(): Promise<number> {
   const dates = await db
