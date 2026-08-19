@@ -1,6 +1,9 @@
 import { getDeckStatsAction } from "@/actions/decks";
 import { expandDecksIfNeededAction } from "@/actions/cards";
 import { DeckCard } from "@/components/DeckCard";
+import { AddSentenceModal } from "@/components/AddSentenceModal";
+
+export const dynamic = "force-dynamic";
 
 export default async function DecksPage() {
   await expandDecksIfNeededAction();
@@ -11,11 +14,14 @@ export default async function DecksPage() {
 
   return (
     <div className="container max-w-4xl mx-auto py-8 px-4 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Your Decks</h1>
-        <p className="text-muted-foreground mt-1">
-          {totalActive} active cards · {totalMature} mature · {totalDue} due
-        </p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold">Your Decks</h1>
+          <p className="text-muted-foreground mt-1">
+            {totalActive} active cards · {totalMature} mature · {totalDue} due
+          </p>
+        </div>
+        <AddSentenceModal triggerLabel="Add New Sentence" />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stats.map((s) => (

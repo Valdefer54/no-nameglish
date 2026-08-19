@@ -3,8 +3,9 @@
 import { db } from "@/lib/db";
 import { cards, sessions } from "@/lib/db/schema";
 import { eq, and, isNotNull, sql, desc, lte } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { MIN_WORDS_PER_CATEGORY, dateToISO } from "@/lib/session";
-import { CATEGORIES } from "@/types";
+import { CATEGORIES, type VocabCategory } from "@/types";
 
 export async function expandDecksIfNeededAction(): Promise<void> {
   const now = new Date().toISOString();
@@ -45,6 +46,48 @@ export async function expandDecksIfNeededAction(): Promise<void> {
         .set({ due: now })
         .where(eq(cards.id, card.id));
     }
+  }
+}
+
+export async function createCardAction(data: {
+  sentence: string;
+  targetChunk: string;
+  meaning: string;
+  hint?: string | null;
+  category: VocabCategory | string;
+  sourceContext?: string | null;
+}): Promise<{ success: boolean; cardId?: number; error?: string }> {
+  try {
+    const [inserted] = await db
+      .insert(cards)
+      .values({
+        sentence: data.sentence.trim(),
+        targetChunk: data.targetChunk.trim(),
+        meaning: data.meaning.trim(),
+        hint: data.hint?.trim() || null,
+        deckId: data.category,
+        sourceContext: data.sourceContext?.trim() || "User Added",
+        state: 0, // New
+        due: new Date().toISOString(),
+        stability: 0,
+        difficulty: 0,
+        elapsedDays: 0,
+        scheduledDays: 0,
+        reps: 0,
+        lapses: 0,
+        learningSteps: 0,
+        isActive: true,
+      })
+      .returning({ id: cards.id });
+
+    revalidatePath("/");
+    revalidatePath("/decks");
+    revalidatePath("/session");
+
+    return { success: true, cardId: inserted.id };
+  } catch (error) {
+    console.error("Failed to create card:", error);
+    return { success: false, error: "Failed to create card." };
   }
 }
 
