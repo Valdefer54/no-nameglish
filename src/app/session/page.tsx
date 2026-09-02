@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { CardReview } from "@/components/CardReview";
 import { SentenceInput } from "@/components/SentenceInput";
 import { RatingButtons } from "@/components/RatingButtons";
@@ -34,7 +35,7 @@ export default function SessionPage() {
   const [worstCards, setWorstCards] = useState<ScoredCard[]>([]);
   const [sentence, setSentence] = useState("");
   const [timerKey, setTimerKey] = useState(0);
-  const cardStartTimeRef = useRef<number>(Date.now());
+  const cardStartTimeRef = useRef<number>(0);
 
   const [cardPhase, setCardPhase] = useState<CardPhase>("front");
   const [selectedRating, setSelectedRating] = useState<Rating | null>(null);
@@ -191,9 +192,9 @@ export default function SessionPage() {
       <div className="container max-w-xl mx-auto py-16 px-4 text-center space-y-4">
         <h2 className="text-2xl font-semibold">All caught up!</h2>
         <p className="text-muted-foreground">No cards are due right now. Come back later.</p>
-        <a href="/" className="text-primary underline text-sm">
+        <Link href="/" className="text-primary underline text-sm">
           Back to Dashboard
-        </a>
+        </Link>
       </div>
     );
   }

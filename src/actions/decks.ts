@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { DAILY_NEW_CARD_LIMIT, isMatureCard } from "@/lib/session";
+import { MAX_CARDS_PER_CATEGORY, isMatureCard } from "@/lib/session";
 import { CATEGORIES, type DeckStats } from "@/types";
 
 export async function getDeckStatsAction(): Promise<DeckStats[]> {
@@ -26,7 +26,7 @@ export async function getDeckStatsAction(): Promise<DeckStats[]> {
         learningCount: allCards.filter((c) => c.state === 1 || c.state === 3).length,
         reviewCount: allCards.filter((c) => c.state === 2).length,
         matureCount: allCards.filter(isMatureCard).length,
-        dueCount: dueOtherCount + Math.min(dueNewCount, DAILY_NEW_CARD_LIMIT),
+        dueCount: Math.min(dueOtherCount + dueNewCount, MAX_CARDS_PER_CATEGORY),
       };
     })
   );

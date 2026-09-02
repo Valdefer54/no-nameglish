@@ -7,6 +7,8 @@ import {
   getMissingCardsForCategory,
   dateToISO,
   MIN_WORDS_PER_CATEGORY,
+  MAX_CARDS_PER_CATEGORY,
+  selectSessionCards,
 } from "./index";
 import { newCardDefaults } from "@/lib/fsrs";
 import type { ReviewResult } from "@/types";
@@ -108,5 +110,96 @@ describe("getMissingCardsForCategory", () => {
 describe("dateToISO", () => {
   test("formats as YYYY-MM-DD", () => {
     assert.equal(dateToISO(new Date("2026-08-09T12:00:00Z")), "2026-08-09");
+  });
+});
+
+describe("selectSessionCards", () => {
+  test("selects at most 5 new cards when there are no review cards", () => {
+    const cards = Array.from({ length: 10 }, (_, i) => ({
+      id: i + 1,
+      deckId: "general",
+      state: 0,
+      due: "2026-09-02T10:00:00Z",
+    }));
+
+    const selected = selectSessionCards(cards);
+    assert.equal(selected.length, MAX_CARDS_PER_CATEGORY);
+    assert.ok(selected.every((c) => c.state === 0));
+  });
+
+  test("prioritizes review cards and fills remaining slots with new cards up to 5", () => {
+    const reviews = [
+      { id: 101, deckId: "general", state: 2, due: "2026-09-01T10:00:00Z" },
+      { id: 102, deckId: "general", state: 1, due: "2026-09-02T08:00:00Z" },
+    ];
+    const news = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      deckId: "general",
+      state: 0,
+      due: "2026-09-02T10:00:00Z",
+    }));
+
+    const selected = selectSessionCards([...reviews, ...news]);
+    assert.equal(selected.length, 5);
+    const selectedReviews = selected.filter((c) => c.state !== 0);
+    const selectedNews = selected.filter((c) => c.state === 0);
+    assert.equal(selectedReviews.length, 2);
+    assert.equal(selectedNews.length, 3);
+  });
+
+  test("caps review cards at 5 and adds 0 new cards when review cards >= 5", () => {
+    const reviews = Array.from({ length: 8 }, (_, i) => ({
+      id: 100 + i,
+      deckId: "general",
+      state: 2,
+      due: `2026-09-01T${String(i).padStart(2, "0")}:00:00Z`,
+    }));
+    const news = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      deckId: "general",
+      state: 0,
+      due: "2026-09-02T10:00:00Z",
+    }));
+
+    const selected = selectSessionCards([...reviews, ...news]);
+    assert.equal(selected.length, 5);
+    assert.ok(selected.every((c) => c.state !== 0));
+    // Most overdue reviews should be chosen first
+    assert.equal(selected[0].id, 100);
+    assert.equal(selected[4].id, 104);
+  });
+
+  test("guarantees at most 25 cards across 5 categories", () => {
+    const categories = [
+      "debate-connectors",
+      "precision-verbs",
+      "intensity-modifiers",
+      "phrasal-verbs",
+      "general",
+    ];
+
+    const allCards: Array<{ id: number; deckId: string; state: number; due: string }> = [];
+    let id = 1;
+
+    for (const cat of categories) {
+      // 4 reviews and 6 new cards in each category (total 10 per category)
+      for (let i = 0; i < 4; i++) {
+        allCards.push({ id: id++, deckId: cat, state: 2, due: "2026-09-01T10:00:00Z" });
+      }
+      for (let i = 0; i < 6; i++) {
+        allCards.push({ id: id++, deckId: cat, state: 0, due: "2026-09-02T10:00:00Z" });
+      }
+    }
+
+    assert.equal(allCards.length, 50); // 50 total candidates
+    const selected = selectSessionCards(allCards);
+    assert.equal(selected.length, 25); // Exactly 25 selected (5 per category)
+
+    for (const cat of categories) {
+      const catCards = selected.filter((c) => c.deckId === cat);
+      assert.equal(catCards.length, 5);
+      assert.equal(catCards.filter((c) => c.state !== 0).length, 4);
+      assert.equal(catCards.filter((c) => c.state === 0).length, 1);
+    }
   });
 });

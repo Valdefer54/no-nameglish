@@ -5,7 +5,7 @@ import { sessions, cards, cardReviews } from "@/lib/db/schema";
 import { eq, lte, and, sql } from "drizzle-orm";
 import { scheduleCard } from "@/lib/fsrs";
 import { Rating } from "ts-fsrs";
-import { DAILY_NEW_CARD_LIMIT } from "@/lib/session";
+import { selectSessionCards } from "@/lib/session";
 import type { Rating as RatingType, Card } from "@/types";
 
 export async function createSessionAction(): Promise<{ sessionId: number }> {
@@ -28,17 +28,7 @@ export async function getDueCardsAction(): Promise<Card[]> {
       sql`RANDOM()`
     );
 
-  // Cards in state 0 ("New") have never been studied.
-  // Review/learning cards (state 1-3) are already scheduled by FSRS.
-  const newCardCountByDeck = new Map<string, number>();
-  return rows.filter((card) => {
-    if (card.state !== 0) return true;
-    const deck = card.deckId || "general";
-    const count = newCardCountByDeck.get(deck) ?? 0;
-    if (count >= DAILY_NEW_CARD_LIMIT) return false;
-    newCardCountByDeck.set(deck, count + 1);
-    return true;
-  }) as Card[];
+  return selectSessionCards(rows as Card[]);
 }
 
 export async function submitCardReviewAction(

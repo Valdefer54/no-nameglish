@@ -61,7 +61,6 @@ export function SentenceInput({
         }
         rows={3}
         className="resize-none font-normal text-base leading-relaxed border-2 focus-visible:ring-primary"
-        // eslint-disable-next-line jsx-a11y/no-autofocus
         autoFocus={autoFocus}
       />
 

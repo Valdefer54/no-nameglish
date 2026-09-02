@@ -2,6 +2,45 @@ import type { ReviewResult, ScoredCard } from "@/types";
 
 export const MIN_WORDS_PER_CATEGORY = 5;
 export const DAILY_NEW_CARD_LIMIT = 5;
+export const MAX_CARDS_PER_CATEGORY = 5;
+
+export function selectSessionCards<
+  T extends { deckId?: string | null; state: number; due: string }
+>(allDueCards: T[], maxPerCategory: number = MAX_CARDS_PER_CATEGORY): T[] {
+  const byDeck = new Map<string, { reviews: T[]; news: T[] }>();
+
+  for (const card of allDueCards) {
+    const deck = card.deckId || "general";
+    let group = byDeck.get(deck);
+    if (!group) {
+      group = { reviews: [], news: [] };
+      byDeck.set(deck, group);
+    }
+    if (card.state === 0) {
+      group.news.push(card);
+    } else {
+      group.reviews.push(card);
+    }
+  }
+
+  const selectedCards: T[] = [];
+
+  for (const [, { reviews, news }] of byDeck) {
+    const sortedReviews = [...reviews].sort(
+      (a, b) => new Date(a.due).getTime() - new Date(b.due).getTime()
+    );
+    const chosenReviews = sortedReviews.slice(0, maxPerCategory);
+    selectedCards.push(...chosenReviews);
+
+    const remainingSlots = maxPerCategory - chosenReviews.length;
+    if (remainingSlots > 0) {
+      const chosenNews = news.slice(0, remainingSlots);
+      selectedCards.push(...chosenNews);
+    }
+  }
+
+  return selectedCards;
+}
 
 export function computePerformanceScore(
   rating: number,
