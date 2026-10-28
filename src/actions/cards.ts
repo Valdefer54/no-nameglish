@@ -6,8 +6,11 @@ import { eq, and, isNotNull, sql, desc, lte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { MIN_WORDS_PER_CATEGORY, dateToISO } from "@/lib/session";
 import { CATEGORIES, type VocabCategory } from "@/types";
+import { requireUser } from "@/lib/current-user";
 
 export async function expandDecksIfNeededAction(): Promise<void> {
+  const user = await requireUser();
+  if (user.studyLevel === "beginner") return;
   const now = new Date().toISOString();
 
   for (const category of CATEGORIES) {
@@ -17,6 +20,7 @@ export async function expandDecksIfNeededAction(): Promise<void> {
       .from(cards)
       .where(
         and(
+          eq(cards.userId, user.id),
           eq(cards.deckId, category),
           eq(cards.isActive, true),
           lte(cards.due, now)
@@ -32,6 +36,7 @@ export async function expandDecksIfNeededAction(): Promise<void> {
       .from(cards)
       .where(
         and(
+          eq(cards.userId, user.id),
           eq(cards.deckId, category),
           eq(cards.isActive, true),
           sql`${cards.due} > ${now}`
@@ -44,7 +49,7 @@ export async function expandDecksIfNeededAction(): Promise<void> {
       await db
         .update(cards)
         .set({ due: now })
-        .where(eq(cards.id, card.id));
+        .where(and(eq(cards.id, card.id), eq(cards.userId, user.id)));
     }
   }
 }
@@ -57,15 +62,24 @@ export async function createCardAction(data: {
   category: VocabCategory | string;
   sourceContext?: string | null;
 }): Promise<{ success: boolean; cardId?: number; error?: string }> {
+  const user = await requireUser();
+  if (!data || ![data.sentence, data.targetChunk, data.meaning].every((value) => typeof value === "string" && value.trim() && value.length <= 5000) ||
+      !CATEGORIES.includes(data.category as VocabCategory) ||
+      (data.hint != null && (typeof data.hint !== "string" || data.hint.length > 5000)) ||
+      (data.sourceContext != null && (typeof data.sourceContext !== "string" || data.sourceContext.length > 5000))) {
+    return { success: false, error: "Please provide a sentence, target word, meaning and valid category." };
+  }
   try {
     const [inserted] = await db
       .insert(cards)
       .values({
+        userId: user.id,
+        cefrLevel: null,
         sentence: data.sentence.trim(),
         targetChunk: data.targetChunk.trim(),
         meaning: data.meaning.trim(),
         hint: data.hint?.trim() || null,
-        deckId: data.category,
+        deckId: user.studyLevel === "beginner" ? "general" : data.category,
         sourceContext: data.sourceContext?.trim() || "User Added",
         state: 0, // New
         due: new Date().toISOString(),
@@ -92,10 +106,11 @@ export async function createCardAction(data: {
 }
 
 export async function getCurrentStreakAction(): Promise<number> {
+  const user = await requireUser();
   const dates = await db
     .selectDistinct({ date: sql<string>`date(${sessions.completedAt})` })
     .from(sessions)
-    .where(isNotNull(sessions.completedAt))
+    .where(and(eq(sessions.userId, user.id), isNotNull(sessions.completedAt)))
     .orderBy(desc(sql`date(${sessions.completedAt})`));
 
   const dateList = dates.map((d) => d.date).filter(Boolean) as string[];

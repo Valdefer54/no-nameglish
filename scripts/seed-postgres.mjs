@@ -7,6 +7,8 @@ import { sql } from "drizzle-orm";
 // Define the cards table matching Drizzle schema
 export const cards = pgTable("cards", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: text("user_id").notNull(),
+  cefrLevel: text("cefr_level"),
   deckId: text("deck_id"),
   sentence: text("sentence").notNull(),
   targetChunk: text("target_chunk").notNull(),
@@ -31,9 +33,10 @@ export const cards = pgTable("cards", {
     .default(sql`now()`),
 });
 
-const DB_CONNECTION =
-  process.env.POSTGRES_URL ||
-  "postgres://nameglish:nameglish123@localhost:5434/no_nameglish";
+const DB_CONNECTION = process.env.POSTGRES_URL;
+if (!DB_CONNECTION || !process.env.OWNER_USERNAME) {
+  throw new Error("Set POSTGRES_URL and OWNER_USERNAME; run db:setup-users first.");
+}
 
 const WORD_LINE = /^\s+(\d+)\.\s+(.+?)\s*$/;
 
@@ -200,18 +203,29 @@ async function seed() {
 
   const client = postgres(DB_CONNECTION, { max: 1 });
   const db = drizzle(client);
+  const [owner] = await client`SELECT id FROM users WHERE username = ${process.env.OWNER_USERNAME.trim().toLowerCase()} AND role = 'admin'`;
+  if (!owner) throw new Error("Owner not found. Run db:setup-users first.");
+  const existing = await client`SELECT target_chunk FROM cards WHERE user_id = ${owner.id}`;
+  const seen = new Set(existing.map((card) => card.target_chunk));
+  const missingCards = clozeCards.filter((card) => {
+    if (seen.has(card.targetChunk)) return false;
+    seen.add(card.targetChunk);
+    return true;
+  });
 
   console.log("Connecting to PostgreSQL and seeding cards via Drizzle ORM...");
 
   const CHUNK_SIZE = 500;
   let inserted = 0;
 
-  for (let i = 0; i < clozeCards.length; i += CHUNK_SIZE) {
-    const chunk = clozeCards.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < missingCards.length; i += CHUNK_SIZE) {
+    const chunk = missingCards.slice(i, i + CHUNK_SIZE);
     
     // Batch insert using Drizzle ORM
     await db.insert(cards).values(
       chunk.map((item) => ({
+        userId: owner.id,
+        cefrLevel: "B2-C1",
         sentence: item.sentence,
         targetChunk: item.targetChunk,
         meaning: item.meaning,
@@ -232,7 +246,7 @@ async function seed() {
     );
 
     inserted += chunk.length;
-    console.log(`  Inserted ${inserted}/${clozeCards.length} cards...`);
+    console.log(`  Inserted ${inserted}/${missingCards.length} cards...`);
   }
 
   await client.end();

@@ -1,8 +1,12 @@
-import { pgTable, text, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, real, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { users } from "./auth-schema";
+export * from "./auth-schema";
 
 export const cards = pgTable("cards", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: text("user_id").notNull().references(() => users.id),
+  cefrLevel: text("cefr_level").default("B2-C1"),
   deckId: text("deck_id"),
   sentence: text("sentence").notNull(),
   targetChunk: text("target_chunk").notNull(),
@@ -28,17 +32,18 @@ export const cards = pgTable("cards", {
   createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
-});
+}, (table) => [index("cards_user_due_idx").on(table.userId, table.due)]);
 
 export const sessions = pgTable("sessions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: text("user_id").notNull().references(() => users.id),
   startedAt: timestamp("started_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
   completedAt: timestamp("completed_at", { mode: "string", withTimezone: true }),
   totalCards: integer("total_cards").notNull().default(0),
   worstCardIds: text("worst_card_ids"), // JSON: number[]
-});
+}, (table) => [index("sessions_user_idx").on(table.userId)]);
 
 export const cardReviews = pgTable("card_reviews", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -54,7 +59,7 @@ export const cardReviews = pgTable("card_reviews", {
   reviewedAt: timestamp("reviewed_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
-});
+}, (table) => [index("card_reviews_session_idx").on(table.sessionId)]);
 
 export type InsertCard = typeof cards.$inferInsert;
 export type SelectCard = typeof cards.$inferSelect;

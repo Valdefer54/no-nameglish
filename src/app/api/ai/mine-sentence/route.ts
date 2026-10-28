@@ -1,3 +1,4 @@
+import { getCurrentUser } from "@/lib/current-user";
 import { NextRequest, NextResponse } from "next/server";
 import type { VocabCategory } from "@/types";
 
@@ -20,12 +21,16 @@ interface GeneratedClozeResponse {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getCurrentUser(req.headers);
+  if (!user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
   try {
-    const { input } = (await req.json()) as { input: string };
-
-    if (!input || !input.trim()) {
+    const body = await req.json().catch(() => null);
+    const input = body?.input;
+    if (typeof input !== "string" || !input.trim() || input.length > 2000) {
       return NextResponse.json(
-        { error: "Please provide a word, phrase, or sentence." },
+        { error: "Please provide a word, phrase, or sentence (up to 2000 characters)." },
         { status: 400 }
       );
     }
@@ -35,18 +40,19 @@ export async function POST(req: NextRequest) {
 
     if (!apiKey) {
       // Fallback heuristic if API key is not configured
-      return NextResponse.json(generateFallback(trimmedInput));
+      return NextResponse.json(generateFallback(trimmedInput, user.studyLevel === "beginner"));
     }
 
-    const systemPrompt = `You are an expert English linguist and ESL curriculum designer (B2-C1 CEFR level).
+    const systemPrompt = `You are an expert English linguist and ESL curriculum designer.
+${user.studyLevel === "beginner" ? "This learner is starting from A1 toward B1. Use a very short simple everyday English sentence (max 12 words), a clear Spanish translation for meaning, a Spanish hint, and always category general. Avoid advanced words in the surrounding sentence." : "Use B2-C1 CEFR level examples, meanings and hints in English."}
 The user will provide either a word, a phrasal verb, an expression, or a full sentence.
 Your task is to produce a high-quality Sentence Mining / Cloze Deletion record.
 
 Instructions:
 1. Identify or extract the target vocabulary item ("targetChunk").
-2. Create or adapt a natural, professional, high-yield sentence (CEFR B2-C1) where the target vocabulary item is enclosed in double curly brackets: {{targetChunk}}.
-3. Provide a clear, concise English definition / meaning for the targetChunk (max 20 words).
-4. Provide a brief contextual hint (max 10 words).
+2. Create or adapt a natural sentence at the learner level specified above where the target vocabulary item is enclosed in double curly brackets: {{targetChunk}}.
+3. Provide a clear, concise definition / meaning in the language specified above for the targetChunk (max 20 words).
+4. Provide a brief contextual hint (max 10 words) in the language specified above.
 5. Determine the most appropriate category from EXACTLY these 5 options:
    - "debate-connectors" (e.g. however, furthermore, nevertheless, in contrast, consequently, albeit, insofar as)
    - "precision-verbs" (e.g. elucidate, substantiate, delineate, articulate, undermine, extrapolate, scrutinize)
@@ -55,13 +61,19 @@ Instructions:
    - "general" (e.g. comprehensive, nuanced, arbitrary, pervasive, pragmatic, inevitable)
 
 Output MUST be a single raw valid JSON object with NO markdown formatting, NO backticks, NO extra text:
-{
+${user.studyLevel === "beginner" ? `{
+  "sentence": "I drink {{water}} every day.",
+  "targetChunk": "water",
+  "meaning": "agua",
+  "hint": "Una bebida que necesitas cada día.",
+  "category": "general"
+}` : `{
   "sentence": "The company decided to {{turn down}} the acquisition offer due to regulatory scrutiny.",
   "targetChunk": "turn down",
   "meaning": "To refuse or decline an offer, request, or proposal.",
   "hint": "To decline or reject.",
   "category": "phrasal-verbs"
-}`;
+}`}`;
 
     const userPrompt = `Input: "${trimmedInput}"`;
 
@@ -85,7 +97,7 @@ Output MUST be a single raw valid JSON object with NO markdown formatting, NO ba
 
     if (!res.ok) {
       console.warn("DeepSeek API error, using fallback:", await res.text());
-      return NextResponse.json(generateFallback(trimmedInput));
+      return NextResponse.json(generateFallback(trimmedInput, user.studyLevel === "beginner"));
     }
 
     const data = (await res.json()) as {
@@ -94,7 +106,7 @@ Output MUST be a single raw valid JSON object with NO markdown formatting, NO ba
 
     const content = data.choices[0]?.message?.content?.trim();
     if (!content) {
-      return NextResponse.json(generateFallback(trimmedInput));
+      return NextResponse.json(generateFallback(trimmedInput, user.studyLevel === "beginner"));
     }
 
     // Clean potential markdown blocks if present
@@ -120,6 +132,7 @@ Output MUST be a single raw valid JSON object with NO markdown formatting, NO ba
       }
     }
 
+    if (user.studyLevel === "beginner") category = "general";
     return NextResponse.json({
       sentence,
       targetChunk,
@@ -130,7 +143,7 @@ Output MUST be a single raw valid JSON object with NO markdown formatting, NO ba
     });
   } catch (error) {
     console.error("Error in mine-sentence API:", error);
-    return NextResponse.json(generateFallback(""));
+    return NextResponse.json(generateFallback("", user.studyLevel === "beginner"));
   }
 }
 
@@ -181,9 +194,14 @@ function guessCategory(word: string): VocabCategory {
   return "general";
 }
 
-function generateFallback(input: string): GeneratedClozeResponse & { sourceContext: string } {
+function generateFallback(input: string, beginner = false): GeneratedClozeResponse & { sourceContext: string } {
   const word = input || "adapt";
   const category = guessCategory(word);
+  if (beginner) return {
+    sentence: `I am learning the word "{{${word}}}".`, targetChunk: word,
+    meaning: `Añade el significado de «${word}».`, hint: "Completa la frase con la palabra que estás aprendiendo.",
+    category: "general", sourceContext: "Beginner vocabulary (manual fallback)",
+  };
 
   return {
     sentence: `In modern development, it is critical to {{${word}}} effectively to emerging challenges.`,

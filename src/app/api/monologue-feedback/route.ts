@@ -1,12 +1,20 @@
+import { getCurrentUser } from "@/lib/current-user";
 import { NextRequest, NextResponse } from "next/server";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 
 export async function POST(req: NextRequest) {
-  const { words, transcript } = await req.json() as {
-    words: string[];
-    transcript: string;
-  };
+  const user = await getCurrentUser(req.headers);
+  if (!user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  const body = await req.json().catch(() => null);
+  if (!body || !Array.isArray(body.words) || body.words.length > 25 ||
+      !body.words.every((word: unknown) => typeof word === "string" && word.length <= 200) ||
+      typeof body.transcript !== "string" || body.transcript.length > 12000) {
+    return NextResponse.json({ error: "Invalid monologue request" }, { status: 400 });
+  }
+  const { words, transcript } = body as { words: string[]; transcript: string };
 
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -15,7 +23,8 @@ export async function POST(req: NextRequest) {
 
   const wordList = words.map((w) => `"${w}"`).join(", ");
 
-  const prompt = `You are a concise English tutor evaluating a student's spoken monologue.
+  const prompt = `${user.studyLevel === "beginner" ? "Respond in simple Spanish and give gentle A1-B1 level advice." : "Respond in English at B2-C1 level."}
+You are a concise English tutor evaluating a student's spoken monologue.
 The student was asked to use these words naturally: ${wordList}.
 
 Their transcribed speech:

@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/current-user";
 import { getDeckStatsAction } from "@/actions/decks";
 import { getCurrentStreakAction, expandDecksIfNeededAction } from "@/actions/cards";
 import { getDueCardsAction } from "@/actions/session";
@@ -10,6 +11,7 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  const user = await requireUser();
   await expandDecksIfNeededAction();
 
   const [streak, deckStats, dueCards] = await Promise.all([
@@ -32,7 +34,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <AddSentenceModal triggerLabel="Mine New Word" variant="outline" />
+          <AddSentenceModal beginner={user.studyLevel === "beginner"} triggerLabel="Mine New Word" variant="outline" />
           <StreakCounter streak={streak} />
         </div>
       </div>
@@ -48,14 +50,14 @@ export default async function DashboardPage() {
           <p className="text-muted-foreground font-medium">
             No cards due right now. You can mine and add new sentences below or check your decks.
           </p>
-          <AddSentenceModal triggerLabel="Add a New Sentence" />
+          <AddSentenceModal beginner={user.studyLevel === "beginner"} triggerLabel="Add a New Sentence" />
         </div>
       )}
 
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Your Decks</h2>
-          <AddSentenceModal
+          <AddSentenceModal beginner={user.studyLevel === "beginner"}
             triggerLabel="+ Add Word / Sentence"
             variant="ghost"
             size="sm"

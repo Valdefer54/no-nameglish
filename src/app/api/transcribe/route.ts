@@ -1,8 +1,12 @@
+import { getCurrentUser } from "@/lib/current-user";
 import { NextRequest, NextResponse } from "next/server";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 
 export async function POST(req: NextRequest) {
+  if (!await getCurrentUser(req.headers)) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -11,11 +15,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const incoming = await req.formData();
-  const audio = incoming.get("audio") as File | null;
+  const incoming = await req.formData().catch(() => null);
+  const audio = incoming?.get("audio");
 
-  if (!audio) {
-    return NextResponse.json({ error: "No audio file received" }, { status: 400 });
+  if (!(audio instanceof File) || audio.size === 0 || audio.size > 25 * 1024 * 1024) {
+    return NextResponse.json({ error: "Send an audio file between 1 byte and 25 MB" }, { status: 400 });
   }
 
   // Preserve the original MIME so Groq picks the right decoder

@@ -15,6 +15,7 @@ import {
 import { Sparkles, Plus, Check, Loader2, X, Eye } from "lucide-react";
 
 interface Props {
+  beginner?: boolean;
   triggerClassName?: string;
   triggerLabel?: string;
   variant?: "default" | "outline" | "secondary" | "ghost";
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function AddSentenceModal({
+  beginner = false,
   triggerClassName = "",
   triggerLabel = "Add Sentence",
   variant = "default",
@@ -283,7 +285,7 @@ export function AddSentenceModal({
                     onChange={(e) => setCategory(e.target.value as VocabCategory)}
                     className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-xs focus:outline-hidden focus:ring-2 focus:ring-primary"
                   >
-                    {CATEGORIES.map((cat) => (
+                    {(beginner ? ["general" as const] : CATEGORIES).map((cat) => (
                       <option key={cat} value={cat}>
                         {CATEGORY_LABELS[cat]}
                       </option>

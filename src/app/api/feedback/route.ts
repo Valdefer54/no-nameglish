@@ -1,13 +1,19 @@
+import { getCurrentUser } from "@/lib/current-user";
 import { NextRequest, NextResponse } from "next/server";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 
 export async function POST(req: NextRequest) {
-  const { word, sentence, category } = await req.json() as {
-    word: string;
-    sentence: string;
-    category: string;
-  };
+  const user = await getCurrentUser(req.headers);
+  if (!user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  const body = await req.json().catch(() => null);
+  if (!body || ![body.word, body.sentence, body.category].every((value) => typeof value === "string") ||
+      body.word.length > 200 || body.sentence.length > 5000 || body.category.length > 100) {
+    return NextResponse.json({ error: "Invalid feedback request" }, { status: 400 });
+  }
+  const { word, sentence, category } = body as { word: string; sentence: string; category: string };
 
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -17,7 +23,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const prompt = `You are a concise English tutor. The student is learning the word "${word}" (category: ${category}).
+  const prompt = `${user.studyLevel === "beginner" ? "Give feedback in simple Spanish for an A1 learner progressing toward B1. Focus on basic usage." : "Give feedback in English for a B2-C1 learner."}
+You are a concise English tutor. The student is learning the word "${word}" (category: ${category}).
 They wrote this sentence: "${sentence}"
 Give ONE short sentence of feedback (max 30 words) on how natural and accurate the usage is. Be specific and encouraging.`;
 

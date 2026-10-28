@@ -39,6 +39,7 @@ export const CATEGORY_COLORS: Record<VocabCategory, string> = {
 
 export interface Card {
   id: number;
+  cefrLevel?: string | null;
   deckId?: string | null;
   sentence: string;
   targetChunk: string;

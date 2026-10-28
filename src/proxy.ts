@@ -1,20 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
 export function proxy(request: NextRequest) {
-  const password = process.env.APP_PASSWORD;
-  if (!password) return NextResponse.next();
-
-  const auth = request.headers.get("authorization");
-  if (auth?.startsWith("Basic ")) {
-    const [, pass] = atob(auth.slice(6)).split(":");
-    if (pass === password) return NextResponse.next();
+  const path = request.nextUrl.pathname;
+  if (path === "/login" || path.startsWith("/api/auth/")) {
+    return NextResponse.next();
   }
-
-  return new NextResponse("Authentication required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="no-nameglish"' },
-  });
+  // This only handles navigation; actions and APIs validate the actual session.
+  if (getSessionCookie(request)) return NextResponse.next();
+  if (path.startsWith("/api/")) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  return NextResponse.redirect(new URL("/login", request.url));
 }
 
 export const config = {

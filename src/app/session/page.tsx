@@ -41,6 +41,9 @@ export default function SessionPage() {
   const [selectedRating, setSelectedRating] = useState<Rating | null>(null);
   const [feedbackText, setFeedbackText] = useState<string | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const savingRef = useRef(false);
 
   useEffect(() => {
     async function init() {
@@ -100,8 +103,8 @@ export default function SessionPage() {
   );
 
   const handleSelectRating = useCallback(
-    (rating: Rating) => {
-      if (!currentCard || sessionId === null) return;
+    async (rating: Rating) => {
+      if (!currentCard || sessionId === null || savingRef.current) return;
 
       // "Again" means the card went badly — skip writing a sentence for it.
       if (rating === 1) {
@@ -115,11 +118,14 @@ export default function SessionPage() {
           sentence: "",
         };
 
-        submitCardReviewAction(sessionId, currentCard.id, rating, responseTimeMs, "");
-
-        const newResults = [...results, result];
-        setResults(newResults);
-        advanceToNext(newResults);
+        savingRef.current = true; setSaving(true); setSaveError("");
+        try {
+          await submitCardReviewAction(sessionId, currentCard.id, rating, responseTimeMs, "");
+          const newResults = results.some((review) => review.cardId === result.cardId) ? results : [...results, result];
+          setResults(newResults);
+          await advanceToNext(newResults);
+        } catch { setSaveError("Could not save your review. Please try again."); }
+        finally { savingRef.current = false; setSaving(false); }
         return;
       }
 
@@ -130,7 +136,7 @@ export default function SessionPage() {
   );
 
   const handleSentenceSubmit = useCallback(async () => {
-    if (!currentCard || sessionId === null || selectedRating === null) return;
+    if (!currentCard || sessionId === null || selectedRating === null || savingRef.current) return;
 
     const responseTimeMs = Date.now() - cardStartTimeRef.current;
     const result: ReviewResult = {
@@ -142,14 +148,19 @@ export default function SessionPage() {
       sentence,
     };
 
-    // Fire-and-forget: don't block UI on network call
-    submitCardReviewAction(
+    savingRef.current = true; setSaving(true); setSaveError("");
+    try {
+      await submitCardReviewAction(
       sessionId,
       currentCard.id,
       selectedRating,
       responseTimeMs,
       sentence
-    );
+      );
+    } catch {
+      setSaveError("Could not save your review. Please try again.");
+      return;
+    } finally { savingRef.current = false; setSaving(false); }
 
     setResults((prev) => [...prev, result]);
     setCardPhase("feedback");
@@ -176,7 +187,8 @@ export default function SessionPage() {
   }, [currentCard, sessionId, selectedRating, sentence]);
 
   const handleNext = useCallback(async () => {
-    await advanceToNext(results);
+    try { setSaveError(""); await advanceToNext(results); }
+    catch { setSaveError("Could not finish the session. Please try Next again."); }
   }, [advanceToNext, results]);
 
   if (phase === "loading") {
@@ -209,6 +221,8 @@ export default function SessionPage() {
           <Timer key={timerKey} />
         </div>
         <Progress value={progress} className="h-1.5" />
+        {currentCard.cefrLevel && <p className="text-sm text-muted-foreground">Vocabulary level: {currentCard.cefrLevel}</p>}
+        {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
         <CardReview
           sentence={currentCard.sentence}
           targetChunk={currentCard.targetChunk}
@@ -226,7 +240,7 @@ export default function SessionPage() {
         )}
 
         {cardPhase === "revealed" && (
-          <RatingButtons onRate={handleSelectRating} />
+          <RatingButtons onRate={handleSelectRating} disabled={saving} />
         )}
 
         {cardPhase === "sentence" && (
@@ -241,7 +255,7 @@ export default function SessionPage() {
             <Button
               onClick={handleSentenceSubmit}
               className="w-full"
-              disabled={sentence.trim().length < 5}
+              disabled={saving || sentence.trim().length < 5}
             >
               Submit
             </Button>

@@ -1,6 +1,6 @@
 import type { InsertCard } from "@/lib/db/schema";
 
-export type SeedCard = Omit<InsertCard, "id" | "createdAt">;
+export type SeedCard = Omit<InsertCard, "id" | "createdAt" | "userId">;
 
 interface RawVocabItem {
   word: string;

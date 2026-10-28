@@ -5,14 +5,17 @@ import { cards } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { MAX_CARDS_PER_CATEGORY, isMatureCard } from "@/lib/session";
 import { CATEGORIES, type DeckStats } from "@/types";
+import { requireUser } from "@/lib/current-user";
 
 export async function getDeckStatsAction(): Promise<DeckStats[]> {
+  const user = await requireUser();
+  const categories = user.studyLevel === "beginner" ? ["general" as const] : CATEGORIES;
   return Promise.all(
-    CATEGORIES.map(async (category): Promise<DeckStats> => {
+    categories.map(async (category): Promise<DeckStats> => {
       const allCards = await db
         .select()
         .from(cards)
-        .where(and(eq(cards.deckId, category), eq(cards.isActive, true)));
+        .where(and(eq(cards.userId, user.id), eq(cards.deckId, category), eq(cards.isActive, true)));
 
       const now = new Date();
       const dueCards = allCards.filter((c) => new Date(c.due) <= now);

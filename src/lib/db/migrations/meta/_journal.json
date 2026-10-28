@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793140289420,
+      "tag": "0000_invited_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793140481044,
+      "tag": "0001_beginner_vocabulary",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793146084698,
+      "tag": "0002_username_login",
+      "breakpoints": true
+    }
+  ]
+}

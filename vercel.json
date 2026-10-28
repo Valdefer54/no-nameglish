@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "if [ \"$PROVISION_OWNER\" = \"1\" ]; then node --import tsx scripts/setup-users.ts || exit 1; fi; npm run build"
+}

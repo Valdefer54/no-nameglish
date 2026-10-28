@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/current-user";
 import { getDeckStatsAction } from "@/actions/decks";
 import { expandDecksIfNeededAction } from "@/actions/cards";
 import { DeckCard } from "@/components/DeckCard";
@@ -6,6 +7,7 @@ import { AddSentenceModal } from "@/components/AddSentenceModal";
 export const dynamic = "force-dynamic";
 
 export default async function DecksPage() {
+  const user = await requireUser();
   await expandDecksIfNeededAction();
   const stats = await getDeckStatsAction();
   const totalActive = stats.reduce((s, d) => s + d.totalActive, 0);
@@ -21,7 +23,7 @@ export default async function DecksPage() {
             {totalActive} active cards · {totalMature} mature · {totalDue} due
           </p>
         </div>
-        <AddSentenceModal triggerLabel="Add New Sentence" />
+        <AddSentenceModal beginner={user.studyLevel === "beginner"} triggerLabel="Add New Sentence" />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stats.map((s) => (
