@@ -60,4 +60,4 @@
 - Integration includes dotted usernames, public profile update rejection, password change and other-session revocation.
 - Production build, lint and TypeScript pass. Legacy and fresh databases were tested locally.
 - Independent review findings (final review retry duplication, internal username identifier validation, nullable username update bypass) were fixed.
-- Production database migration and deployment have not been run. Use the existing no-nameglish POSTGRES_URL; do not replace it with a newly connected database.
+- Production migration and deployment completed using the existing no-nameglish POSTGRES_URL. Preserved 101 cards, 26 study sessions and 253 reviews for valdefer; the transaction verified progress fingerprints and stored no_nameglish_legacy_backup. Production username login/admin access and anonymous access guards were verified. The one-time PROVISION_OWNER flag was reset to 0.
