@@ -4,6 +4,10 @@ export const MIN_WORDS_PER_CATEGORY = 5;
 export const DAILY_NEW_CARD_LIMIT = 5;
 export const MAX_CARDS_PER_CATEGORY = 5;
 
+export function getSessionCardLimit(studyLevel: "beginner" | "advanced"): number {
+  return studyLevel === "beginner" ? 10 : MAX_CARDS_PER_CATEGORY;
+}
+
 export function selectSessionCards<
   T extends { deckId?: string | null; state: number; due: string }
 >(allDueCards: T[], maxPerCategory: number = MAX_CARDS_PER_CATEGORY): T[] {

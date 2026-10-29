@@ -115,7 +115,7 @@ test("only the owner creates invited accounts; guests start with private decks",
   assert.ok(await login(dottedUsername, body.password), "permitted dot placement must not break the internal auth identifier");
   const dashboard = await fetch(baseURL, { headers: { cookie: guestCookie } });
   assert.equal(dashboard.status, 200);
-  assert.match(await dashboard.text(), /5 cards due for review/);
+  assert.match(await dashboard.text(), /10 cards due for review/);
   const adminPage = await fetch(`${baseURL}/users`, { headers: { cookie: guestCookie }, redirect: "manual" });
   assert.equal(adminPage.status, 404);
 
@@ -142,7 +142,7 @@ test("server actions cannot read or change another learner's progress, even with
   const [ownerCard] = await db.execute(sql`SELECT id, reps, stability FROM cards WHERE target_chunk = 'legacy'`);
   const guestCards = await action("getDueCardsAction", [], guestCookie);
   assert.equal(guestCards.response.status, 200, guestCards.text);
-  assert.equal(guestCards.value.length, 5);
+  assert.equal(guestCards.value.length, 10);
   assert.ok(guestCards.value.every((card: { userId: string; cefrLevel: string }) => card.userId === guestId && card.cefrLevel === "A1"));
   const stats = await action("getDeckStatsAction", [], guestCookie);
   assert.equal(stats.value.length, 1);
@@ -177,7 +177,7 @@ test("server actions cannot read or change another learner's progress, even with
     await db.execute(sql`UPDATE cards SET state = 2, due = now() + interval '1 year' WHERE user_id = ${guestId} AND cefr_level = ${finishedLevel}`);
     const next = await action("getDueCardsAction", [], guestCookie);
     assert.ok(next.value.every((card: { cefrLevel: string }) => card.cefrLevel === nextLevel));
-    assert.equal(next.value.length, 5);
+    assert.equal(next.value.length, 10);
   }
   await db.execute(sql`UPDATE auth_sessions SET expires_at = now() - interval '1 second' WHERE user_id = ${guestId}`);
   assert.equal((await post("/api/feedback", {}, guestCookie)).status, 401);

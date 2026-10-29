@@ -5,7 +5,7 @@ import { sessions, cards, cardReviews } from "@/lib/db/schema";
 import { eq, lte, and, sql } from "drizzle-orm";
 import { scheduleCard } from "@/lib/fsrs";
 import { Rating } from "ts-fsrs";
-import { selectSessionCards } from "@/lib/session";
+import { selectSessionCards, getSessionCardLimit } from "@/lib/session";
 import { requireUser } from "@/lib/current-user";
 import { notFound } from "next/navigation";
 import type { Rating as RatingType, Card } from "@/types";
@@ -23,7 +23,7 @@ export async function getDueCardsAction(): Promise<Card[]> {
     .orderBy(cards.deckId, sql`CASE WHEN ${cards.state} = 0 THEN 1 ELSE 0 END`,
       sql`CASE ${cards.cefrLevel} WHEN 'A1' THEN 0 WHEN 'A2' THEN 1 WHEN 'B1' THEN 2 ELSE 3 END`,
       sql`RANDOM()`);
-  return selectSessionCards(rows as Card[]);
+  return selectSessionCards(rows as Card[], getSessionCardLimit(user.studyLevel));
 }
 
 export async function submitCardReviewAction(

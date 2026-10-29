@@ -8,7 +8,7 @@ El acceso es por invitación, con nombre de usuario y contraseña; no requiere c
 
 Al crear una cuenta se elige:
 
-- **Beginner · A1 → B1**: 300 palabras y expresiones de uso cotidiano, 100 por nivel, con ejemplos originales cortos, significados y pistas en español. El catálogo compartido vive en la tabla `vocabulary`; las tarjetas y el progreso son privados. Se presentan primero las palabras nuevas A1, después A2 y B1, dando prioridad a los repasos pendientes. Las sesiones básicas contienen hasta 5 tarjetas.
+- **Beginner · A1 → B1**: 300 palabras y expresiones de uso cotidiano, 100 por nivel, con ejemplos originales cortos, significados y pistas en español. El catálogo compartido vive en la tabla `vocabulary`; las tarjetas y el progreso son privados. Se presentan primero las palabras nuevas A1, después A2 y B1, dando prioridad a los repasos pendientes. Las sesiones básicas contienen hasta 10 tarjetas.
 - **Advanced · B2–C1**: vocabulario avanzado y las cinco categorías originales, hasta 25 tarjetas por sesión.
 
 La cuenta administradora conserva el nivel avanzado y sus datos anteriores. La lista básica es una selección propia con niveles orientativos, no una lista oficial de Oxford ni una certificación de B1. Complementa la práctica de comprensión, gramática y conversación.

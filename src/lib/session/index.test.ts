@@ -8,6 +8,7 @@ import {
   dateToISO,
   MIN_WORDS_PER_CATEGORY,
   MAX_CARDS_PER_CATEGORY,
+  getSessionCardLimit,
   selectSessionCards,
 } from "./index";
 import { newCardDefaults } from "@/lib/fsrs";
@@ -202,4 +203,10 @@ describe("selectSessionCards", () => {
       assert.equal(catCards.filter((c) => c.state === 0).length, 1);
     }
   });
+});
+
+ test("beginner sessions select ten cards while advanced keeps five per category", () => {
+  const candidates = Array.from({ length: 15 }, (_, id) => ({ id, deckId: "general", state: 0, due: "2026-01-01" }));
+  assert.equal(selectSessionCards(candidates, getSessionCardLimit("beginner")).length, 10);
+  assert.equal(selectSessionCards(candidates, getSessionCardLimit("advanced")).length, 5);
 });
