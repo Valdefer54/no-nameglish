@@ -11,6 +11,8 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   role: text("role").default("user"),
   studyLevel: text("study_level", { enum: ["beginner", "advanced"] }).notNull().default("beginner"),
+  beginnerLevel: text("beginner_level", { enum: ["A1", "A2", "B1"] }).notNull().default("A1"),
+  graduationPending: boolean("graduation_pending").notNull().default(false),
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires", { withTimezone: true }),

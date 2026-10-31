@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, eq, and } from "drizzle-orm";
 import type { db } from "./index";
 import { cards, vocabulary } from "./schema";
 import { INITIAL_VOCABULARY } from "@/data/initial-vocabulary";
@@ -16,7 +16,11 @@ export async function seedVocabularyCatalog(tx: Transaction) {
 export async function seedUserCards(tx: Transaction, userId: string, studyLevel: "beginner" | "advanced") {
   const due = new Date().toISOString();
   if (studyLevel === "advanced") {
-    await tx.insert(cards).values(INITIAL_VOCABULARY.map((card) => ({ ...card, userId, due, cefrLevel: "B2-C1" })));
+    const existing = await tx.select({ word: cards.targetChunk }).from(cards)
+      .where(and(eq(cards.userId, userId), eq(cards.cefrLevel, "B2-C1")));
+    const words = new Set(existing.map((card) => card.word));
+    const missing = INITIAL_VOCABULARY.filter((card) => !words.has(card.targetChunk));
+    if (missing.length) await tx.insert(cards).values(missing.map((card) => ({ ...card, userId, due, cefrLevel: "B2-C1" })));
     return;
   }
   const words = await tx.select().from(vocabulary);

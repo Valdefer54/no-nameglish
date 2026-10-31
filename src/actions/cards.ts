@@ -2,57 +2,11 @@
 
 import { db } from "@/lib/db";
 import { cards, sessions } from "@/lib/db/schema";
-import { eq, and, isNotNull, sql, desc, lte } from "drizzle-orm";
+import { eq, and, isNotNull, sql, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { MIN_WORDS_PER_CATEGORY, dateToISO } from "@/lib/session";
+import { dateToISO } from "@/lib/session";
 import { CATEGORIES, type VocabCategory } from "@/types";
 import { requireUser } from "@/lib/current-user";
-
-export async function expandDecksIfNeededAction(): Promise<void> {
-  const user = await requireUser();
-  if (user.studyLevel === "beginner") return;
-  const now = new Date().toISOString();
-
-  for (const category of CATEGORIES) {
-    // 1. Get all active cards in this category that are due right now
-    const dueActiveCards = await db
-      .select({ id: cards.id })
-      .from(cards)
-      .where(
-        and(
-          eq(cards.userId, user.id),
-          eq(cards.deckId, category),
-          eq(cards.isActive, true),
-          lte(cards.due, now)
-        )
-      );
-
-    const needed = Math.max(0, MIN_WORDS_PER_CATEGORY - dueActiveCards.length);
-    if (needed <= 0) continue;
-
-    // 2. Pull ahead upcoming cards scheduled in the future if needed
-    const upcomingCards = await db
-      .select({ id: cards.id })
-      .from(cards)
-      .where(
-        and(
-          eq(cards.userId, user.id),
-          eq(cards.deckId, category),
-          eq(cards.isActive, true),
-          sql`${cards.due} > ${now}`
-        )
-      )
-      .orderBy(cards.due)
-      .limit(needed);
-
-    for (const card of upcomingCards) {
-      await db
-        .update(cards)
-        .set({ due: now })
-        .where(and(eq(cards.id, card.id), eq(cards.userId, user.id)));
-    }
-  }
-}
 
 export async function createCardAction(data: {
   sentence: string;

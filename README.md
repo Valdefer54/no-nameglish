@@ -6,12 +6,35 @@ Entrenador de vocabulario con repetición espaciada. Next.js 16.4.3, PostgreSQL,
 
 El acceso es por invitación, con nombre de usuario y contraseña; no requiere correo electrónico. El administrador crea cuentas desde **Users**; no hay registro público. Cada persona tiene tarjetas, revisiones, sesiones, racha y estadísticas independientes. Cada usuario puede cambiar su contraseña en **Account** y cerrar sesión.
 
+Las sesiones incluyen un JWT firmado en una cookie HttpOnly y vencen **15 minutos después de iniciar sesión**, aunque se siga usando la aplicación. No se renuevan automáticamente: al vencer se vuelve al login y hay que introducir las credenciales de nuevo. Las APIs y acciones comprueban además la sesión en la base de datos para rechazar sesiones vencidas o revocadas. Al desplegar esta actualización, las sesiones antiguas de siete días requieren iniciar sesión de nuevo; el progreso guardado se conserva. Se utiliza la estrategia JWT integrada de [Better Auth](https://better-auth.com/docs/concepts/session-management).
+
+Si la carga de una sesión de estudio falla o tarda más de 30 segundos, aparece un error con **Try again** y un enlace para volver al panel. Primero se buscan las tarjetas; si no hay pendientes no se crea una sesión vacía. Los reintentos de la misma apertura usan un identificador único por usuario para recuperar la sesión ya creada, incluso si se perdió su respuesta. Antes de desplegar este cambio aplica la migración `0004_session_start_retries.sql` con `npm run db:migrate`.
+
 Al crear una cuenta se elige:
 
-- **Beginner · A1 → B1**: 300 palabras y expresiones de uso cotidiano, 100 por nivel, con ejemplos originales cortos, significados y pistas en español. El catálogo compartido vive en la tabla `vocabulary`; las tarjetas y el progreso son privados. Se presentan primero las palabras nuevas A1, después A2 y B1, dando prioridad a los repasos pendientes. Las sesiones básicas contienen hasta 10 tarjetas.
-- **Advanced · B2–C1**: vocabulario avanzado y las cinco categorías originales, hasta 25 tarjetas por sesión.
+- **Beginner · A1 → A2 → B1**: 300 palabras y expresiones de uso cotidiano, 100 por nivel, con ejemplos originales cortos, significados y pistas en español. Las palabras nuevas siguen el orden del catálogo y los repasos pendientes tienen prioridad. Un nivel se desbloquea al estudiar todas las palabras del anterior y tener al menos el 80 % maduras (estabilidad >21 días y al menos 5 repasos). No tener repasos pendientes no desbloquea otro nivel. Los niveles desbloqueados se guardan en la cuenta y no retroceden por un olvido. Las sesiones básicas contienen hasta 10 tarjetas en total, incluyendo palabras nuevas y repasos.
+- **Advanced · B2–C1**: vocabulario avanzado y las cinco categorías originales, con un límite de **5 tarjetas por categoría y día**, hasta 25 en total. Primero se presentan los repasos vencidos más antiguos; si solo hay 3, se completa con 2 palabras nuevas disponibles. Las tarjetas futuras nunca se adelantan: una programada para el viernes espera hasta el viernes. Si ese día hay más de 5 pendientes, el resto conserva su fecha y tiene prioridad al día siguiente.
+
+Los límites diarios se cuentan entre todas las sesiones y pestañas, y se reinician a medianoche de **America/Bogota (Colombia)**. A1–B1 mantiene un límite de **10 tarjetas diarias en total**. Una palabra ya repasada ese día no vuelve a entrar en otra sesión. Consultar el panel o los mazos no modifica fechas FSRS ni ejecuta operaciones para rellenar sesiones. La migración `0005_daily_review_budget.sql` añade un índice para consultar los repasos del día.
 
 La cuenta administradora conserva el nivel avanzado y sus datos anteriores. La lista básica es una selección propia con niveles orientativos, no una lista oficial de Oxford ni una certificación de B1. Complementa la práctica de comprensión, gramática y conversación.
+
+Al completar B1, con las 300 palabras estudiadas y al menos 240 maduras en el conjunto, la cuenta pasa automáticamente a **B2–C1** y recibe su vocabulario avanzado una sola vez. Se muestra una felicitación hasta pulsar **Continuar con B2–C1**; el aviso se confirma para esa cuenta, también entre dispositivos. Se conservan las tarjetas, revisiones, parámetros FSRS y fechas de repaso de A1–B1. Los repasos anteriores siguen apareciendo cuando corresponde. La migración `0003_vocabulary_progression.sql` añade el nivel desbloqueado y el aviso pendiente; aplícala con `npm run db:migrate` antes de desplegar esta versión.
+
+### Estimación para completar el vocabulario A1
+
+A1 contiene 100 palabras. Con una sesión de hasta 10 tarjetas, cinco días por semana, hay capacidad para **50 presentaciones semanales**; esos espacios se comparten entre palabras nuevas y repasos. El mínimo de trabajo para estudiar todas y madurar 80 es `80 × 5 + 20 × 1 = 420` presentaciones, o 8,4 semanas de capacidad completa, pero los intervalos de FSRS obligan a esperar entre repasos y el calendario real es mayor.
+
+Simulación reproducible: `node --import tsx scripts/estimate-a1.ts`. Se usa el selector real, los parámetros FSRS predeterminados y una sola sesión al mediodía de lunes a viernes, sin adelantar repasos. Se desactiva únicamente la variación aleatoria de los intervalos. Cada escenario usa 20 semillas; cada respuesta es **Good**, salvo el porcentaje indicado de **Again**.
+
+| Respuestas Again | Ver las 100 palabras por primera vez, caso mediano | Alcanzar el 80 % de madurez, caso mediano | Rango entre simulaciones |
+| --- | --- | --- | --- |
+| 0 % | 36 días, unas 5 semanas | 197 días, 28 semanas, unos 6,5 meses | 28 semanas |
+| 5 % | 40 días, unas 6 semanas | 282 días, 40 semanas, unos 9 meses | 29–43 semanas |
+| 10 % | 54 días, unas 8 semanas | 284 días, 41 semanas, unos 9,5 meses | 29–44 semanas |
+| 20 % | 109 días, unas 16 semanas | 333 días, 48 semanas, unos 11 meses | 41–60 semanas |
+
+Son escenarios del algoritmo actual, no una predicción personal ni el tiempo para acreditar un nivel CEFR completo. Las respuestas **Hard/Easy**, más sesiones, ausencias y las tarjetas personales cambian el resultado. En particular, acertar mucho puede producir intervalos largos antes del quinto repaso: haber visto las 100 palabras no equivale a que el sistema ya las considere maduras.
 
 Todas las cuentas usan la misma `DEEPSEEK_API_KEY`, exclusivamente desde el servidor. Las rutas de IA exigen una sesión válida. La generación de frases y las correcciones se adaptan al nivel; para principiantes las explicaciones son en español. `GROQ_API_KEY` se utiliza únicamente para transcripción de audio.
 
@@ -64,7 +87,7 @@ Para preparar la cuenta del propietario con la configuración privada local se p
 
 ### Conservación del progreso al publicar
 
-La preparación bloquea las tablas durante la transacción, copia las filas históricas a `no_nameglish_legacy_backup` y compara el número de filas y una huella de todo su contenido antes y después de asignarlas a `valdefer`. Solo se excluyen de esa comparación los campos nuevos `user_id` y `cefr_level`; las revisiones, identificadores, fechas y parámetros FSRS permanecen intactos. La copia histórica no se sobrescribe al repetir la preparación.
+La preparación bloquea las tablas durante la transacción, copia las filas históricas a `no_nameglish_legacy_backup` y compara el número de filas y una huella de todo su contenido antes y después de asignarlas a `valdefer`. Solo se excluyen de esa comparación los metadatos nuevos `user_id`, `cefr_level` y `request_id`; las revisiones, identificadores, fechas y parámetros FSRS permanecen intactos. La copia histórica no se sobrescribe al repetir la preparación.
 
 Para ejecutar esta preparación desde Vercel usando su conexión existente, configura `PROVISION_OWNER=1` y `OWNER_USERNAME`, `OWNER_NAME`, `OWNER_PASSWORD` en Production antes del despliegue. El comando de `vercel.json` detiene la compilación si falla la migración. Después de verificar el despliegue, establece `PROVISION_OWNER=0` y retira las credenciales temporales de preparación de los siguientes despliegues. La aplicación solo requiere las variables habituales de autenticación y PostgreSQL.
 

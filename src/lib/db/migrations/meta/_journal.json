@@ -22,6 +22,27 @@
       "when": 1793146084698,
       "tag": "0002_username_login",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793292839031,
+      "tag": "0003_vocabulary_progression",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793295926209,
+      "tag": "0004_session_start_retries",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793296299120,
+      "tag": "0005_daily_review_budget",
+      "breakpoints": true
     }
   ]
 }

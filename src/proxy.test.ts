@@ -20,3 +20,14 @@ test("the login form and auth handler are publicly reachable", () => {
     assert.equal(proxy(new NextRequest(`https://example.com${path}`)).status, 200);
   }
 });
+
+test("navigation accepts the new session cookie and requires legacy sessions to sign in again", () => {
+  const current = proxy(new NextRequest("https://example.com/decks", {
+    headers: { cookie: "no-nameglish-15m.session_token=present" },
+  }));
+  assert.equal(current.status, 200);
+  const legacy = proxy(new NextRequest("https://example.com/decks", {
+    headers: { cookie: "better-auth.session_token=old-seven-day-session" },
+  }));
+  assert.equal(legacy.status, 307);
+});

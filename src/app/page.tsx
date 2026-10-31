@@ -1,23 +1,25 @@
 import { requireUser } from "@/lib/current-user";
 import { getDeckStatsAction } from "@/actions/decks";
-import { getCurrentStreakAction, expandDecksIfNeededAction } from "@/actions/cards";
+import { getCurrentStreakAction } from "@/actions/cards";
 import { getDueCardsAction } from "@/actions/session";
 import { StreakCounter } from "@/components/StreakCounter";
 import { DeckCard } from "@/components/DeckCard";
 import { AddSentenceModal } from "@/components/AddSentenceModal";
 import { Button } from "@/components/ui/button";
+import { getVocabularyProgressAction } from "@/actions/progress";
+import { VocabularyProgress } from "@/components/VocabularyProgress";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  await expandDecksIfNeededAction();
 
-  const [streak, deckStats, dueCards] = await Promise.all([
+  const [streak, deckStats, dueCards, progress] = await Promise.all([
     getCurrentStreakAction(),
     getDeckStatsAction(),
     getDueCardsAction(),
+    user.studyLevel === "beginner" ? getVocabularyProgressAction() : null,
   ]);
 
   const totalDue = dueCards.length;
@@ -38,6 +40,8 @@ export default async function DashboardPage() {
           <StreakCounter streak={streak} />
         </div>
       </div>
+
+      {progress && <VocabularyProgress progress={progress} />}
 
       {totalDue > 0 ? (
         <Link href="/session">

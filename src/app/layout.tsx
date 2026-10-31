@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { AddSentenceModal } from "@/components/AddSentenceModal";
-import { getCurrentUser } from "@/lib/current-user";
+import { getCurrentSession, getCurrentUser } from "@/lib/current-user";
 import { SignOutButton } from "@/components/AccountForms";
+import { SessionExpiry } from "@/components/SessionExpiry";
+import { GraduationNotice } from "@/components/GraduationNotice";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,6 +26,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const session = await getCurrentSession();
   const user = await getCurrentUser();
   return (
     <html
@@ -31,6 +34,7 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <SessionExpiry expiresAt={session?.session.expiresAt.toISOString() ?? null} />
         <nav className="border-b bg-background px-4 sm:px-6 py-3 flex flex-wrap gap-3 justify-between items-center sticky top-0 z-10">
           <div className="flex flex-wrap gap-4 items-center">
             <Link href="/" className="font-bold text-lg tracking-tight">
@@ -47,7 +51,10 @@ export default async function RootLayout({
             <SignOutButton />
           </div>}
         </nav>
-        <main className="flex-1">{children}</main>
+        <main className="flex-1">
+          {user?.graduationPending && <GraduationNotice />}
+          {children}
+        </main>
       </body>
     </html>
   );

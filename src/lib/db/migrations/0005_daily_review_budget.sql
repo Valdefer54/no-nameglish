@@ -1,0 +1,1 @@
+CREATE INDEX "card_reviews_reviewed_idx" ON "card_reviews" USING btree ("reviewed_at");

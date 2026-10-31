@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test, after } from "node:test";
 import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { db } from "../src/lib/db";
 import { setupUsers } from "../src/lib/db/setup-users";
 import { sql } from "drizzle-orm";
@@ -35,12 +36,16 @@ async function login(username: string, password: string) {
 }
 
 async function action(name: string, args: unknown[], cookie: string) {
-  const manifest = JSON.parse(await readFile(".next/dev/server/server-reference-manifest.json", "utf8")) as {
-    node: Record<string, { exportedName: string }>;
+  const manifest = JSON.parse(await readFile(process.env.TEST_SERVER_REFERENCE_MANIFEST ?? ".next/dev/server/server-reference-manifest.json", "utf8")) as {
+    node: Record<string, { exportedName: string; workers: Record<string, unknown> }>;
   };
   const entry = Object.entries(manifest.node).find(([, value]) => value.exportedName === name);
   assert.ok(entry, `${name} must be registered after loading /session`);
-  const response = await fetch(`${baseURL}/session`, {
+  const workers = Object.keys(entry[1].workers);
+  const worker = workers.find((path) => path === "app/session/page") ?? workers.find((path) => path === "app/page") ?? workers.find((path) => path.endsWith("/page"));
+  assert.ok(worker, `${name} must have a page worker`);
+  const pathname = worker === "app/page" ? "/" : worker.replace(/^app/, "").replace(/\/page$/, "").replaceAll("[id]", "1");
+  const response = await fetch(`${baseURL}${pathname}`, {
     method: "POST", headers: { "content-type": "text/plain;charset=UTF-8", accept: "text/x-component", "next-action": entry[0], origin: baseURL, cookie },
     body: JSON.stringify(args), redirect: "manual",
   });
@@ -83,7 +88,7 @@ test("public signup and anonymous account creation are closed", async () => {
 
 test("paid APIs reject anonymous and forged sessions before parsing the body", async () => {
   for (const path of ["/api/feedback", "/api/monologue-feedback", "/api/ai/mine-sentence", "/api/transcribe"]) {
-    for (const cookie of ["", "better-auth.session_token=forged"]) {
+    for (const cookie of ["", "better-auth.session_token=forged", "no-nameglish-15m.session_token=forged"]) {
       const response = await post(path, null, cookie);
       assert.equal(response.status, 401, `${path}: ${await response.text()}`);
     }
@@ -174,17 +179,199 @@ test("server actions cannot read or change another learner's progress, even with
   const malformed = await post("/api/feedback", null, guestCookie);
   assert.equal(malformed.status, 400);
   for (const [finishedLevel, nextLevel] of [["A1", "A2"], ["A2", "B1"]]) {
-    await db.execute(sql`UPDATE cards SET state = 2, due = now() + interval '1 year' WHERE user_id = ${guestId} AND cefr_level = ${finishedLevel}`);
+    await db.execute(sql`UPDATE cards SET state = 2, reps = 5, stability = 22, due = now() + interval '1 year' WHERE user_id = ${guestId} AND cefr_level = ${finishedLevel}`);
     const next = await action("getDueCardsAction", [], guestCookie);
     assert.ok(next.value.every((card: { cefrLevel: string }) => card.cefrLevel === nextLevel));
-    assert.equal(next.value.length, 10);
+    assert.equal(next.value.length, 9, "one of today's ten beginner slots was already reviewed");
   }
   await db.execute(sql`UPDATE auth_sessions SET expires_at = now() - interval '1 second' WHERE user_id = ${guestId}`);
   assert.equal((await post("/api/feedback", {}, guestCookie)).status, 401);
 });
 
+test("beginner levels unlock in order and graduation preserves progress and seeds advanced vocabulary exactly once", async () => {
+  const ownerCookie = await login(ownerUsername, ownerPassword);
+  const username = `progress_${Date.now()}`;
+  const created = await post("/api/users", { name: "Progress learner", username, password: "learner-password-123" }, ownerCookie);
+  assert.equal(created.status, 201, await created.clone().text());
+  const { user: { id: userId } } = await created.json();
+  const cookie = await login(username, "learner-password-123");
+  await fetch(`${baseURL}/session`, { headers: { cookie } });
+  const initial = await action("getDueCardsAction", [], cookie);
+  assert.deepEqual(initial.value.map((card: { targetChunk: string }) => card.targetChunk),
+    ["mother", "father", "sister", "brother", "son", "daughter", "baby", "family", "friend", "name"]);
+  const studySession = await action("createSessionAction", [], cookie);
+  const [locked] = await db.execute(sql`SELECT id FROM cards WHERE user_id = ${userId} AND cefr_level = 'B1' LIMIT 1`);
+  assert.equal((await action("submitCardReviewAction", [studySession.value.sessionId, locked.id, 3, 1000, "Locked word."], cookie)).response.status, 500);
+  await db.execute(sql`UPDATE cards SET due = now() + interval '1 year' WHERE user_id = ${userId} AND cefr_level = 'A1'`);
+  assert.deepEqual((await action("getDueCardsAction", [], cookie)).value, [], "future reviews must not unlock A2");
+
+  for (const [level, next] of [["A1", "A2"], ["A2", "B1"]]) {
+    await db.execute(sql`UPDATE cards SET state = 2, reps = 5, stability = 10, due = now() + interval '1 year' WHERE user_id = ${userId} AND cefr_level = ${level}`);
+    await db.execute(sql`UPDATE cards SET stability = 22 WHERE id IN (SELECT id FROM cards WHERE user_id = ${userId} AND cefr_level = ${level} ORDER BY id LIMIT 80)`);
+    const due = await action("getDueCardsAction", [], cookie);
+    assert.equal(due.value.length, 10);
+    assert.ok(due.value.every((card: { cefrLevel: string }) => card.cefrLevel === next));
+  }
+  await db.execute(sql`UPDATE cards SET stability = 0 WHERE id = (SELECT id FROM cards WHERE user_id = ${userId} AND cefr_level = 'A1' ORDER BY id LIMIT 1)`);
+  await db.execute(sql`UPDATE cards SET state = 2, reps = 5, stability = 10, due = now() + interval '1 year' WHERE user_id = ${userId} AND cefr_level = 'B1'`);
+  await db.execute(sql`UPDATE cards SET stability = 22 WHERE id IN (SELECT id FROM cards WHERE user_id = ${userId} AND cefr_level = 'B1' ORDER BY id LIMIT 80)`);
+  await action("getDueCardsAction", [], cookie);
+  const [notYet] = await db.execute(sql`SELECT study_level, beginner_level FROM users WHERE id = ${userId}`);
+  assert.equal(notYet.study_level, "beginner");
+  assert.equal(notYet.beginner_level, "B1", "an earlier lapse must not relock levels");
+  await db.execute(sql`UPDATE cards SET stability = 22 WHERE id = (SELECT id FROM cards WHERE user_id = ${userId} AND cefr_level = 'A1' ORDER BY id LIMIT 1)`);
+  const before = await db.execute(sql`SELECT * FROM cards WHERE user_id = ${userId} ORDER BY id`);
+  const promotions = await Promise.all([action("getDueCardsAction", [], cookie), action("getDueCardsAction", [], cookie)]);
+  assert.ok(promotions.every((result) => result.value.length === 25));
+  const [promoted] = await db.execute(sql`SELECT study_level, graduation_pending FROM users WHERE id = ${userId}`);
+  assert.equal(promoted.study_level, "advanced");
+  assert.equal(promoted.graduation_pending, true);
+  assert.deepEqual(await db.execute(sql`SELECT * FROM cards WHERE user_id = ${userId} AND cefr_level IN ('A1', 'A2', 'B1') ORDER BY id`), before);
+  const [advanced] = await db.execute(sql`SELECT count(*)::int AS count, count(DISTINCT target_chunk)::int AS unique_count FROM cards WHERE user_id = ${userId} AND cefr_level = 'B2-C1'`);
+  assert.equal(advanced.count, 100);
+  assert.equal(advanced.unique_count, 100);
+  await db.execute(sql`UPDATE cards SET due = now() + interval '2 years' WHERE user_id = ${userId} AND cefr_level = 'B2-C1' AND deck_id = 'general'`);
+  assert.match(await (await fetch(`${baseURL}/`, { headers: { cookie } })).text(), /¡Felicitaciones!/);
+  assert.deepEqual(await db.execute(sql`SELECT * FROM cards WHERE user_id = ${userId} AND cefr_level IN ('A1', 'A2', 'B1') ORDER BY id`), before,
+    "opening the advanced dashboard must preserve the original beginner review dates");
+  await action("acknowledgeGraduationAction", [], ownerCookie);
+  const [stillPending] = await db.execute(sql`SELECT graduation_pending FROM users WHERE id = ${userId}`);
+  assert.equal(stillPending.graduation_pending, true, "one user cannot dismiss another user's notice");
+  const acknowledged = await action("acknowledgeGraduationAction", [], cookie);
+  assert.equal(acknowledged.response.status, 200, acknowledged.text);
+  const [dismissed] = await db.execute(sql`SELECT graduation_pending FROM users WHERE id = ${userId}`);
+  assert.equal(dismissed.graduation_pending, false);
+});
+
 test("wrong passwords are rejected", async () => {
   assert.equal((await post("/api/auth/sign-in/username", { username: ownerUsername, password: "wrong-password" }, "", "192.0.2.20")).status, 401);
+});
+
+test("retrying session creation after a lost response reuses the same private session", async () => {
+  const ownerCookie = await login(ownerUsername, ownerPassword);
+  await fetch(`${baseURL}/session`, { headers: { cookie: ownerCookie } });
+  const requestId = randomUUID();
+  const responses = await Promise.all([
+    action("createSessionAction", [requestId], ownerCookie),
+    action("createSessionAction", [requestId], ownerCookie),
+  ]);
+  assert.ok(responses.every((result) => result.response.status === 200));
+  assert.equal(responses[0].value.sessionId, responses[1].value.sessionId);
+  const replay = await action("createSessionAction", [requestId], ownerCookie);
+  assert.equal(replay.value.sessionId, responses[0].value.sessionId);
+  const invalid = await action("createSessionAction", ["invalid-request-id"], ownerCookie);
+  assert.equal(invalid.value?.sessionId, undefined);
+  assert.match(invalid.text, /1:E/, "the invalid request must return an action error");
+  const username = `retry_${Date.now()}`;
+  const created = await post("/api/users", { name: "Retry learner", username, password: "learner-password-123" }, ownerCookie);
+  assert.equal(created.status, 201);
+  const { user: { id: userId } } = await created.json();
+  const cookie = await login(username, "learner-password-123");
+  const other = await action("createSessionAction", [requestId], cookie);
+  assert.notEqual(other.value.sessionId, responses[0].value.sessionId);
+  const [record] = await db.execute(sql`SELECT user_id FROM sessions WHERE id = ${other.value.sessionId}`);
+  assert.equal(record.user_id, userId);
+});
+
+test("HTTP study initialization validates requests, returns the same session on retry and creates no empty sessions", async () => {
+  const ownerCookie = await login(ownerUsername, ownerPassword);
+  const username = `http_${Date.now()}`;
+  const created = await post("/api/users", { name: "HTTP learner", username, password: "learner-password-123" }, ownerCookie);
+  assert.equal(created.status, 201);
+  const { user: { id: userId } } = await created.json();
+  const cookie = await login(username, "learner-password-123");
+  assert.equal((await post("/api/study-session", { requestId: randomUUID() })).status, 401);
+  assert.equal((await post("/api/study-session", { requestId: "invalid" }, cookie)).status, 400);
+  assert.equal((await fetch(`${baseURL}/api/study-session`, { method: "POST", headers: {
+    cookie, "content-type": "application/json", origin: "https://foreign.example.test",
+  }, body: JSON.stringify({ requestId: randomUUID() }) })).status, 403);
+  const requestId = randomUUID();
+  const responses = await Promise.all([
+    post("/api/study-session", { requestId }, cookie), post("/api/study-session", { requestId }, cookie),
+  ]);
+  assert.ok(responses.every((response) => response.status === 200));
+  const [first, second] = await Promise.all(responses.map((response) => response.json()));
+  assert.equal(first.sessionId, second.sessionId);
+  assert.equal(first.cards.length, 10);
+  const [before] = await db.execute(sql`SELECT count(*)::int AS count FROM sessions WHERE user_id = ${userId}`);
+  assert.equal(before.count, 1);
+  await db.execute(sql`UPDATE cards SET due = now() + interval '2 days' WHERE user_id = ${userId} AND cefr_level = 'A1'`);
+  const empty = await post("/api/study-session", { requestId: randomUUID() }, cookie);
+  assert.deepEqual(await empty.json(), { sessionId: null, cards: [] });
+  const [after] = await db.execute(sql`SELECT count(*)::int AS count FROM sessions WHERE user_id = ${userId}`);
+  assert.equal(after.count, 1);
+  const complete = (authCookie: string) => fetch(`${baseURL}/api/study-session`, {
+    method: "PATCH", headers: { cookie: authCookie, origin: baseURL, "content-type": "application/json" },
+    body: JSON.stringify({ sessionId: first.sessionId, worstCardIds: [] }),
+  });
+  assert.equal((await complete("")).status, 401);
+  assert.equal((await complete(ownerCookie)).status, 503, "another account cannot complete this session");
+  assert.equal((await complete(cookie)).status, 200);
+  const [finished] = await db.execute(sql`SELECT completed_at FROM sessions WHERE id = ${first.sessionId}`);
+  assert.ok(finished.completed_at);
+});
+
+test("advanced daily quotas keep future dates, fill with new words, prevent concurrent overflow and carry backlog to the next day", async () => {
+  const ownerCookie = await login(ownerUsername, ownerPassword);
+  const username = `quota_${Date.now()}`;
+  const created = await post("/api/users", { name: "Quota learner", username, password: "learner-password-123", studyLevel: "advanced" }, ownerCookie);
+  assert.equal(created.status, 201);
+  const { user: { id: userId } } = await created.json();
+  const cookie = await login(username, "learner-password-123");
+  await db.execute(sql`UPDATE cards SET is_active = (deck_id = 'general') WHERE user_id = ${userId}`);
+  const general = await db.execute<{ id: number }>(sql`SELECT id FROM cards WHERE user_id = ${userId} AND deck_id = 'general' ORDER BY id`);
+  const reviewIds = general.slice(0, 3).map((card) => card.id);
+  await db.execute(sql`UPDATE cards SET state = 2, reps = 5, stability = 22, difficulty = 5, last_review = now() - interval '1 day', due = now() - interval '1 day'
+    WHERE id IN (${sql.join(reviewIds.map((id) => sql`${id}`), sql`, `)})`);
+  const futureId = general[3].id;
+  await db.execute(sql`UPDATE cards SET state = 2, reps = 5, stability = 22, difficulty = 5, due = now() + interval '2 days' WHERE id = ${futureId}`);
+  const [futureBefore] = await db.execute(sql`SELECT due FROM cards WHERE id = ${futureId}`);
+  const started = await post("/api/study-session", { requestId: randomUUID() }, cookie);
+  assert.equal(started.status, 200);
+  const initial = await started.json();
+  assert.equal(initial.cards.length, 5);
+  assert.deepEqual(initial.cards.slice(0, 3).map((card: { id: number }) => card.id), reviewIds);
+  assert.ok(initial.cards.slice(3).every((card: { state: number }) => card.state === 0));
+  assert.ok(initial.cards.every((card: { id: number }) => card.id !== futureId));
+  await fetch(`${baseURL}/session`, { headers: { cookie } });
+  const early = await action("submitCardReviewAction", [initial.sessionId, futureId, 3, 1000, "Too early."], cookie);
+  assert.match(early.text, /1:E/, "a known future card cannot be reviewed before its date");
+  for (const card of initial.cards.slice(0, 4)) {
+    const saved = await action("submitCardReviewAction", [initial.sessionId, card.id, 3, 1000, "A daily review."], cookie);
+    assert.equal(saved.response.status, 200, saved.text);
+  }
+  const otherSession = await action("createSessionAction", [randomUUID()], cookie);
+  const alreadyReviewed = await action("submitCardReviewAction", [otherSession.value.sessionId, initial.cards[0].id, 3, 1000, "Other tab."], cookie);
+  assert.equal(alreadyReviewed.value.error, "already-reviewed");
+  const extraId = general[6].id;
+  const candidates = [initial.cards[4].id, extraId];
+  const saved = await Promise.all(candidates.map((id) => action("submitCardReviewAction", [initial.sessionId, id, 3, 1000, "Concurrent last slot."], cookie)));
+  assert.equal(saved.filter((result) => result.value?.error === "daily-limit").length, 1);
+  const [count] = await db.execute(sql`SELECT count(*)::int AS count FROM card_reviews WHERE session_id = ${initial.sessionId}`);
+  assert.equal(count.count, 5);
+  const exhausted = await post("/api/study-session", { requestId: randomUUID() }, cookie);
+  assert.deepEqual(await exhausted.json(), { sessionId: null, cards: [] });
+  assert.deepEqual((await db.execute(sql`SELECT due FROM cards WHERE id = ${futureId}`))[0], futureBefore);
+  const { getDailyReviewBudget } = await import("../src/lib/db/daily-reviews");
+  const { cards: cardTable } = await import("../src/lib/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const { getStudyCards } = await import("../src/lib/vocabulary-progress");
+  const later = new Date(Date.now() + 3 * 86_400_000);
+  const rows = await db.select().from(cardTable).where(eq(cardTable.userId, userId));
+  const next = getStudyCards(rows, "advanced", "B1", later, await getDailyReviewBudget(userId, later));
+  assert.ok(next.some((card) => card.id === futureId), "future review becomes available after its actual due date");
+  await db.execute(sql`UPDATE cards SET state = 2, reps = 5, stability = 22, due = now() - interval '1 day' WHERE user_id = ${userId} AND deck_id = 'general'`);
+  const backlog = await action("getDueCardsAction", [], cookie);
+  assert.deepEqual(backlog.value, [], "opening another session cannot bypass the exhausted quota");
+  await db.execute(sql`UPDATE card_reviews SET reviewed_at = reviewed_at - interval '1 day' WHERE session_id = ${initial.sessionId}`);
+  const freshDay = await action("getDueCardsAction", [], cookie);
+  assert.equal(freshDay.value.length, 5);
+  assert.ok(freshDay.value.every((card: { state: number }) => card.state === 2), "overdue reviews take priority over new words");
+  await db.execute(sql`UPDATE card_reviews SET reviewed_at = CASE
+    WHEN id = (SELECT min(id) FROM card_reviews WHERE session_id = ${initial.sessionId}) THEN '2026-10-29T05:00:00Z'::timestamptz
+    ELSE '2026-10-29T04:59:59Z'::timestamptz END WHERE session_id = ${initial.sessionId}`);
+  assert.equal((await getDailyReviewBudget(userId, new Date("2026-10-29T04:59:59.500Z"))).counts.general, 4);
+  assert.equal((await getDailyReviewBudget(userId, new Date("2026-10-29T05:00:00.000Z"))).counts.general, 1);
 });
 
 test("both vocabulary levels use one server-side DeepSeek key with level-appropriate prompts", async () => {

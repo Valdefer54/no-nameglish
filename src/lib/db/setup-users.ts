@@ -13,7 +13,7 @@ type ProgressTable = "cards" | "sessions" | "card_reviews";
 async function progressFingerprint(tx: Transaction, table: ProgressTable) {
   const [result] = await tx.execute<{ count: number; digest: string }>(sql`
     SELECT count(*)::integer AS count,
-      md5(coalesce(jsonb_agg(to_jsonb(p) - 'user_id' - 'cefr_level' ORDER BY p.id), '[]'::jsonb)::text) AS digest
+      md5(coalesce(jsonb_agg(to_jsonb(p) - 'user_id' - 'cefr_level' - 'request_id' ORDER BY p.id), '[]'::jsonb)::text) AS digest
     FROM public.${sql.identifier(table)} p`);
   return result;
 }

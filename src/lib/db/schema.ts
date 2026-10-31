@@ -1,4 +1,4 @@
-import { pgTable, text, integer, real, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, real, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./auth-schema";
 export * from "./auth-schema";
@@ -43,7 +43,8 @@ export const sessions = pgTable("sessions", {
   completedAt: timestamp("completed_at", { mode: "string", withTimezone: true }),
   totalCards: integer("total_cards").notNull().default(0),
   worstCardIds: text("worst_card_ids"), // JSON: number[]
-}, (table) => [index("sessions_user_idx").on(table.userId)]);
+  requestId: text("request_id"),
+}, (table) => [index("sessions_user_idx").on(table.userId), uniqueIndex("sessions_user_request_idx").on(table.userId, table.requestId)]);
 
 export const cardReviews = pgTable("card_reviews", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -59,7 +60,7 @@ export const cardReviews = pgTable("card_reviews", {
   reviewedAt: timestamp("reviewed_at", { mode: "string", withTimezone: true })
     .notNull()
     .default(sql`now()`),
-}, (table) => [index("card_reviews_session_idx").on(table.sessionId)]);
+}, (table) => [index("card_reviews_session_idx").on(table.sessionId), index("card_reviews_reviewed_idx").on(table.reviewedAt)]);
 
 export type InsertCard = typeof cards.$inferInsert;
 export type SelectCard = typeof cards.$inferSelect;
